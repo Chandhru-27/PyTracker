@@ -6,9 +6,9 @@ from utils import keywords
 from storage import db
 import atexit
 
-# ----------------------
-# Database Setup
-# ----------------------
+# ------------------------
+# Initialize the Database 
+# ------------------------
 user_db = db.Database()
 user_db.create_general_user_stats()
 user_db.create_appwise_usage()
@@ -16,10 +16,13 @@ user_db.create_appwise_usage()
 # Ensure DB connection is closed gracefully on exit
 atexit.register(user_db.close_connection)
 
-# ----------------------
+# ------------------------
 # Activity Tracker Logic
-# ----------------------
+# ------------------------
 def activity_tracker(state: UserActivityState):
+    """
+    Tracks basic activities like screentime, breaktime and appwise screentimes.
+    """
     def activity_logic():
         state.update()
         with state.lock:
@@ -34,10 +37,13 @@ def activity_tracker(state: UserActivityState):
                 
     run_every(5, activity_logic)
 
-# ----------------------
+# ------------------------
 # Reminder Logic
-# ----------------------
+# ------------------------
 def reminder_logic(state: UserActivityState):
+    """
+    Holds the mathematical logic of how breaktime is assumed and accounted.
+    """
     reminder_threshold = 45 * 60  # 45 minutes
     idle_threshold = 60  # seconds of inactivity to count as break
 
