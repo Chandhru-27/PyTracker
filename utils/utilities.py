@@ -13,7 +13,9 @@ import os
 
 
 def get_idle_time():
-    """Returns the idle time in seconds using Windows APIs."""
+    """
+    Returns the idle time in seconds using Windows APIs.
+    """
     class LASTINPUTINFO(ctypes.Structure):
         _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
 
@@ -24,7 +26,9 @@ def get_idle_time():
     return millis / 1000.0
 
 def get_active_window_title():
-    """Returns the title of the currently focused window."""
+    """
+    Returns the title of the currently focused window.
+    """
     handle = win32gui.GetForegroundWindow()
     try:
         _,process_id = win32process.GetWindowThreadProcessId(handle)
@@ -34,9 +38,13 @@ def get_active_window_title():
         return 'Unknow'
 
 def get_active_audio_status():
+    """
+    Get the active audio status safely from a single thread.
+    """
     import comtypes
     from comtypes import CoInitialize, CoUninitialize
     try:
+        # Initialize seperate thread for working with audio
         CoInitialize()
     except Exception:
         pass  # Already initialized
@@ -46,7 +54,7 @@ def get_active_audio_status():
         for session in sessions:
             try:
                 volume = session._ctl.QueryInterface(ISimpleAudioVolume)
-                if session.State == 1:  # ACTIVE
+                if session.State == 1:  # Active audio
                     level = volume.GetMasterVolume()
                     if level > 0.0:
                         return True
@@ -54,6 +62,7 @@ def get_active_audio_status():
                 continue
         return False
     finally:
+        # Basic cleanup of initialized threads
         try:
             CoUninitialize()
         except Exception:
@@ -61,6 +70,9 @@ def get_active_audio_status():
 
 
 def run_every(interval, func, *args, **kwargs):
+    """
+    Helper function to avoid time skips and still call the function with time intervals.
+    """
     next_time = time.time()
     while True:
         func(*args, **kwargs)

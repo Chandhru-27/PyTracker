@@ -1,13 +1,19 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import sqlite3
 from storage import schema
 from logs.db_logger import logger
 import atexit
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 class Database:
+    """
+    Inside the Database class establish connection and other utilities
+    """
     def __init__(self):
+        """
+        Establish connection to the local database file.
+        """
         try:
             self.connection = sqlite3.connect("storage/User_db" , check_same_thread=False)
             self.connection.execute("PRAGMA foreign_keys = ON")
@@ -17,6 +23,9 @@ class Database:
             logger.exception("Failed to connect to SQLite database")
     
     def create_general_user_stats(self):
+        """
+        Create user table for general stats.
+        """
         try:
             with self.connection:
                 self.cursor.execute(schema.CREATE_TABLE_USER_STATS)
@@ -25,6 +34,9 @@ class Database:
             logger.exception("Failed to create GENERAL_USAGE table.")
     
     def create_appwise_usage(self):
+        """
+        Create user table for appwise stats.
+        """
         try:
             with self.connection:
                 self.cursor.execute(schema.CREATE_TABLE_APPLICATION_USAGE)
@@ -33,6 +45,9 @@ class Database:
             logger.exception("Failed to create APP_USAGE table.")
     
     def insert_current_usertime_info(self , date , screen_time , break_time):
+        """
+        Insert usertime information into general usage table.
+        """
         try:
             with self.connection:
                 self.cursor.execute("""
@@ -48,6 +63,9 @@ class Database:
             logger.exception("Failed to insert into GENERAL_USAGE.")
 
     def upsert_appwise_usertime_info(self, date, app_name, duration, user_stat_id):
+        """
+        Insert appwise usertime info, if not available then update into appwise stat table.
+        """
         try:
             with self.connection:
                 self.cursor.execute("""
@@ -61,6 +79,9 @@ class Database:
             logger.exception("Failed to upsert app-wise usage data.")
 
     def get_user_stat_id(self , date) -> int:
+        """
+        Get the foregin key ID to track appwise usage per day as user_stat_id.
+        """
         try:
             with self.connection:
                 self.cursor.execute(""" SELECT id FROM GENERAL_USAGE WHERE date = ?""",(date,))
@@ -77,6 +98,9 @@ class Database:
             return None
     
     def load_existing_general_usage(self , date):
+        """
+        Get the foregin key ID to track appwise usage per day as user_stat_id.
+        """
         try:
             with self.connection:
                 self.cursor.execute("""
@@ -88,6 +112,9 @@ class Database:
             return None
 
     def load_existing_appwise_usage(self , date):
+        """
+        Load existing data to the variables for every re-start of the application.
+        """
         try:
             with self.connection:
                 self.cursor.execute("""
@@ -100,6 +127,9 @@ class Database:
             return {}
 
     def close_connection(self):
+        """
+        Close cursor and connection to the database.
+        """
         try:
             if self.cursor:
                 self.cursor.close()

@@ -1,3 +1,7 @@
+"""
+Search keywords for active video playback tracking.
+"""
+
 video_keywords = [
                 # Web Browsers (may contain video/audio)
                 'chrome', 'firefox', 'edge', 'opera', 'brave', 'safari', 'vivaldi', 'chromium',
