@@ -1,6 +1,8 @@
 from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
 from logs.app_logger import logger
+from dotenv import load_dotenv
 import win32process
+import subprocess
 import win32gui
 import psutil
 import ctypes
@@ -53,7 +55,7 @@ def get_active_audio_status():
         sessions = AudioUtilities.GetAllSessions()
         for session in sessions:
             try:
-                volume = session._ctl.QueryInterface(ISimpleAudioVolume)
+                volume = session.SimpleAudioVolume
                 if session.State == 1:  # Active audio
                     level = volume.GetMasterVolume()
                     if level > 0.0:
@@ -68,6 +70,65 @@ def get_active_audio_status():
         except Exception:
             pass
 
+def terminate_blocked_app(process_name, blocked_apps):
+    """
+    Terminates a process if it's in the blocked_apps list.
+    """ 
+    try:
+        if process_name in blocked_apps:
+            for proc in psutil.process_iter(['pid', 'name']):
+                if proc.info['name'] == process_name:
+                    proc.kill()
+            logger.debug(f"Terminated blocked app {process_name}")
+    except Exception as e:
+        logger.debug(f"Failed to terminate blocked app {process_name}: {e}")
+
+def block_apps(HOST_PATH, BLOCKED_DOMAINS):
+    try:
+        with open(HOST_PATH , 'r+') as file:
+            file_data = file.read()
+            for website in BLOCKED_DOMAINS:
+                if website not in file_data:
+                    file.write(f"128.0.0.1 {website}\n")
+    except Exception as e:
+        print("Error opening file/Blocking website")
+
+def clean_hosts_file(HOST_PATH, BLOCKED_DOMAINS):
+    try:
+        with open(HOST_PATH, 'r') as file:
+            lines = file.readlines()
+
+        # Remove lines containing blocked domains
+        new_lines = []
+        for line in lines:
+            if not any(domain in line for domain in BLOCKED_DOMAINS):
+                new_lines.append(line)
+
+        with open(HOST_PATH, 'w') as file:
+            file.writelines(new_lines)
+
+        print("[+] Hosts file cleaned.")
+    except PermissionError:
+        print("[-] Permission denied: Run this script as administrator.")
+        exit(1)
+    except Exception as e:
+        print(f"[-] Error cleaning hosts file: {e}")
+        exit(1)
+
+def flush_dns():
+    try:
+        subprocess.run(["ipconfig", "/flushdns"], check=True)
+        print("[+] DNS cache flushed.")
+    except subprocess.CalledProcessError as e:
+        print(f"[-] Failed to flush DNS: {e}")
+
+def restart_dns_service():
+    try:
+        subprocess.run(["net", "stop", "dnscache"], check=True)
+        subprocess.run(["net", "start", "dnscache"], check=True)
+        print("[+] DNS Client service restarted.")
+    except subprocess.CalledProcessError:
+        print("[-] Could not restart DNS Client (might require reboot or higher privileges).")
 
 def run_every(interval, func, *args, **kwargs):
     """

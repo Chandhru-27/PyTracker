@@ -1,7 +1,6 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from datetime import datetime, timedelta
 from utils import utilities, keywords
 from logs.db_logger import logger
@@ -47,7 +46,7 @@ class UserActivityState:
             audio = utilities.get_active_audio_status() # Check if audio is running in the background
 
             # Terminate if the current app is blocked
-            state.terminate_blocked_apps(process_name=process_name) 
+            utilities.terminate_blocked_app(process_name, self.blocked_apps)
 
             elapsed = (now - self.last_check).total_seconds() # Calculate elapsed time
             # Store the output values to class objects
@@ -92,19 +91,6 @@ class UserActivityState:
         self.screen_time = screen_time
         self.total_break_duration = break_time
         self.screentime_per_app.update(app_usage)
-    
-    def terminate_blocked_apps(self, process_name):
-        """
-        Terminates processes listed in the `blocked_apps` set if they are found running.
-        """
-        try:
-            if process_name in self.blocked_apps:
-                for proc in psutil.process_iter(['pid', 'name']):
-                    if proc.info['name'] == process_name:
-                        proc.kill()
-                logger.debug(f"Terminated blocked app {process_name} from opening")
-        except Exception as e:
-            logger.debug(f"Failed to terminate blocked app {process_name}: {e}")
 
 # -------------------------
 # Main Launcher
