@@ -1,4 +1,5 @@
 from state.userstate import UserActivityState
+from utils.utilities import Utility
 from datetime import datetime , timedelta
 from logs.app_logger import logger
 from trackers import trackers
@@ -26,12 +27,18 @@ if __name__ == "__main__":
         app_usage = user_db.load_existing_appwise_usage(today)
         state.load_existing_data(screen_time, break_time, app_usage , blocked_apps , blocked_urls)
         logger.debug(f"Loaded previous usage: Screen Time: {screen_time}, Break Time: {break_time}")
+
+        Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
+
         if state.blocked_apps:
             logger.debug(state.blocked_apps)
         if state.blocked_urls:
             logger.debug(state.blocked_urls)
     else:
         logger.debug("No previous usage found. Starting fresh.")
+        if state.blocked_apps:
+            Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
+
 
     # Start background threads for tracking and reminders
     tracker_thread = threading.Thread(target=trackers.activity_tracker, args=(state,))

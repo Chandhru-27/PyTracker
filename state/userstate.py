@@ -28,7 +28,7 @@ class UserActivityState:
         self.last_check = datetime.now()
         self.lock = threading.Lock()
         self.screentime_per_app = {}
-        self.blocked_apps = set()
+        self.blocked_apps = {"steam.exe"}
         self.blocked_urls = set()
 
     def update(self):
@@ -44,9 +44,6 @@ class UserActivityState:
             process_name = Utility.get_active_window_title() # Get the current process name as ".exe"
             window = os.path.splitext(process_name)[0].lower() # Split and clean the name for db usage
             audio = Utility.get_active_audio_status() # Check if audio is running in the background
-
-            # Terminate if the current app is blocked
-            Utility.terminate_blocked_app(process_name, self.blocked_apps)
             
             elapsed = (now - self.last_check).total_seconds() # Calculate elapsed time
             # Store the output values to class objects

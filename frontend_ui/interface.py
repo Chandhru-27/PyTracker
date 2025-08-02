@@ -50,7 +50,7 @@ home_btn.bind("<Enter>",on_enter)#binding home button with hover colours and pla
 home_btn.bind("<Leave>",on_leave)
 home_btn.place(x=-6,y=4)
 #creating and placing home page logo
-home_img=Image.open("home.svg").resize((50,50))
+home_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\home.svg").resize((50,50))
 home_logo=ImageTk.PhotoImage(home_img)
 logo_label_home=Label(window,image=home_logo,bg=blue_color,bd=0,highlightthickness=0,fg="white")
 logo_label_home.place(x=8,y=53)
@@ -76,7 +76,7 @@ history_btn = Button(
     )     
 history_btn.place(x=0, y=254)
 #creating history logo and placing
-history_img = Image.open("history.svg").resize((50, 50))
+history_img = Image.open(r"C:\Dev\project_pymonitor\frontend_ui\history.svg").resize((50, 50))
 history_logo = ImageTk.PhotoImage(history_img)
 logo_label_history = Label(window, image=history_logo,bg=blue_color,bd=0, highlightthickness=0,fg="white")
 logo_label_history.place(x=8,y=293)
@@ -104,7 +104,7 @@ block_app_btn.place(x=0, y=136)
 block_app_btn.bind("<Enter>",on_enter)
 block_app_btn.bind("<Leave>",on_leave)
 #creating block logo and binding with app
-block_img=Image.open("block.svg").resize((50,50))
+block_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\block.svg").resize((50,50))
 block_logo=ImageTk.PhotoImage(block_img)
 logo_label_block=Label(window,image=block_logo,bg=blue_color,fg="white",bd=0,highlightthickness=0)
 logo_label_block.place(x=8,y=167)
@@ -128,7 +128,7 @@ settings_btn = Button(
 )
 settings_btn.place(x=0, y=372)
 #creating settings logo and binding
-settings_img = Image.open("settings.svg").resize((50, 50))
+settings_img = Image.open(r"C:\Dev\project_pymonitor\frontend_ui\settings.svg").resize((50, 50))
 settings_logo = ImageTk.PhotoImage(settings_img)
 logo_label_settings = Label(window, image=settings_logo,bg=blue_color,bd=0, highlightthickness=0)
 logo_label_settings.place(x=8,y=405)
@@ -138,7 +138,7 @@ logo_label_settings.bind("<Enter>", lambda e: [on_enter(e), settings_btn.config(
 logo_label_settings.bind("<Leave>", lambda e: [on_leave(e), settings_btn.config(bg=blue_color)])
 
 #creating and placing app logo
-logo_img=Image.open("logo.svg").resize((120,120))
+logo_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\logo.svg").resize((120,120))
 logo_logo=ImageTk.PhotoImage(logo_img)
 logo_label_logo=Label(window,image=logo_logo,bg=blue_color,bd=0,highlightthickness=0,width=200)
 logo_label_logo.place(x=10,y=700)

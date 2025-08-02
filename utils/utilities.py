@@ -2,11 +2,13 @@ from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
 from logs.app_logger import logger
 import win32process
 import subprocess
+import pythoncom
 import threading
 import win32gui
 import psutil
 import ctypes
 import time
+import wmi
 import os
 
 # -------------------------
@@ -91,6 +93,80 @@ class Utility:
             logger.debug(f"Failed to terminate blocked app {process_name}: {e}")
 
     @staticmethod
+    def kill_process_tree(pid):
+        """
+        Kills the given process and all its child processes.
+        """
+        try:
+            parent = psutil.Process(pid)
+            for child in parent.children(recursive=True):
+                try:
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            parent.kill()
+        except psutil.NoSuchProcess:
+            pass
+        except psutil.AccessDenied:
+            logger.debug(f"Access denied for PID {pid} - try running as admin.")
+
+    @staticmethod
+    def background_scanner(blocked_apps: set, scan_interval: int = 5):
+        """
+        Continuously scans for blocked apps and kills them if found.
+        """
+        while True:
+            for proc in psutil.process_iter(['name', 'pid']):
+                try:
+                    if proc.info['name'] and proc.info['name'].lower() in blocked_apps:
+                        logger.debug(f"[SCAN] Blocking {proc.info['name']} (PID: {proc.info['pid']})")
+                        Utility.kill_process_tree(proc.info['pid'])
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            time.sleep(scan_interval)
+
+    @staticmethod
+    def wmi_event_watcher(blocked_apps: set):
+        """Blocks new processes instantly when they are created."""
+        pythoncom.CoInitialize()
+        try:
+            while True:
+                try:
+                    c = wmi.WMI()
+                    watcher = c.Win32_Process.watch_for("creation")
+                    logger.debug("[WMI] Connected to process creation watcher")
+
+                    while True:
+                        try:
+                            new_proc = watcher()
+                            if new_proc.Caption and new_proc.Caption.lower() in blocked_apps:
+                                logger.debug(f"[EVENT] Blocking {new_proc.Caption} (PID: {new_proc.ProcessId})")
+                                Utility.kill_process_tree(new_proc.ProcessId)
+                        except wmi.x_wmi as e:
+                            logger.debug(f"[WMI] Watcher error, reconnecting: {e}")
+                            break  # Exit inner loop to reconnect
+
+                except Exception as e:
+                    logger.debug(f"[WMI] Connection error: {e}")
+                    time.sleep(5)  # Wait before retry
+        finally:
+            pythoncom.CoUninitialize()
+
+
+    @staticmethod
+    def start_app_blocker(blocked_apps: set, scan_interval: int = 5):
+        """Starts both background scanning and event watching."""
+        if not blocked_apps:
+            return  # Nothing to block
+
+        t1 = threading.Thread(target=Utility.background_scanner, args=(blocked_apps, scan_interval), daemon=True)
+        t2 = threading.Thread(target=Utility.wmi_event_watcher, args=(blocked_apps,), daemon=True)
+        t1.start()
+        t2.start()
+
+        logger.debug(f"App blocker started for: {', '.join(blocked_apps)}")
+
+    @staticmethod
     def block_url(HOST_PATH, BLOCKED_DOMAINS):
         try:
             with open(HOST_PATH , 'r+') as file:
@@ -101,12 +177,6 @@ class Utility:
         except Exception as e:
             print("Error opening file/Blocking website")
         
-    
-    # def unblock_url(self , HOST_PATH , BLOCKED_DOMAINS):
-    #     self.clean_hosts_file(HOST_PATH , BLOCKED_DOMAINS)
-    #     self.flush_dns()
-    #     self.restart_dns_service()
-    
 
     @staticmethod
     def clean_hosts_file(HOST_PATH: str, BLOCKED_DOMAINS: set):
