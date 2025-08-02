@@ -20,3 +20,18 @@ CREATE_TABLE_APPLICATION_USAGE = """
     UNIQUE(app_name, date)
     );
 """
+
+CREATE_TABLE_BLOCKED_APPS = """
+    CREATE TABLE IF NOT EXISTS blocked_apps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        app_name TEXT UNIQUE
+    );
+"""
+
+CREATE_TABLE_BLOCKED_URLS = """
+    -- blocked_urls table
+    CREATE TABLE IF NOT EXISTS blocked_urls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT UNIQUE
+    );
+"""

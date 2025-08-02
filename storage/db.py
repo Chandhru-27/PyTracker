@@ -22,6 +22,7 @@ class Database:
         except Exception as e:
             logger.exception("Failed to connect to SQLite database")
     
+# --------------------------- TABLE CREATION --------------------------------- #
     def create_general_user_stats(self):
         """
         Create user table for general stats.
@@ -44,6 +45,29 @@ class Database:
         except Exception as e:
             logger.exception("Failed to create APP_USAGE table.")
     
+    def create_blocked_apps(self):
+        """
+        Create table to store blocked apps.
+        """
+        try:
+            with self.connection:
+                self.cursor.execute(schema.CREATE_TABLE_BLOCKED_APPS)
+                logger.debug("Blocked apps table created successfully.")
+        except Exception as e:
+            logger.exception("Failed to create blocked apps tabble.")
+
+    def create_blocked_urls(self):
+        """
+        Create table to store blocked urls.
+        """
+        try:
+            with self.connection:
+                self.cursor.execute(schema.CREATE_TABLE_BLOCKED_URLS)
+                logger.debug("Blocked urls table created successfully.")
+        except Exception as e:
+            logger.exception("Failed to create blocked urls tabble.")
+
+# --------------------------- INSERTION & DELETION --------------------------------- # 
     def insert_current_usertime_info(self , date , screen_time , break_time):
         """
         Insert usertime information into general usage table.
@@ -78,7 +102,68 @@ class Database:
         except Exception as e:
             logger.exception("Failed to upsert app-wise usage data.")
 
-    def get_user_stat_id(self , date) -> int:
+    def insert_blocked_app(self, app_name: str) -> None:
+        app_name = app_name.strip().lower()
+        try:
+            with self.connection:
+                if not self.is_app_blocked(app_name):
+                    self.cursor.execute(
+                        "INSERT INTO blocked_apps (app_name) VALUES (?)",
+                        (app_name,)
+                    )
+                    logger.debug(f"Inserted {app_name} into blocked_apps.")
+                else:
+                    logger.debug(f"{app_name} already in blocked_apps.")
+        except Exception as e:
+            logger.exception(f"Failed to insert {app_name} into blocked apps.")
+
+    def insert_blocked_url(self , url : str) -> None:
+        url = url.strip().lower()
+        try:
+            with self.connection:
+                if not self.is_url_blocked(url):
+                    self.cursor.execute(
+                        "INSERT INTO blocked_urls (url) VALUES (?)",
+                        (url,)
+                    )
+                    logger.debug(f"Inserted {url} into blocked_urls.")
+                else:
+                    logger.debug(f"{url} already in blocked_urls.")
+        except Exception as e:
+            logger.exception(f"Failed to insert {url} into blockd urls.")
+
+    def remove_from_blocked_apps(self, app_name: str) -> None:
+        app_name = app_name.strip().lower()
+        try:
+            with self.connection:
+                if self.is_app_blocked(app_name):
+                    self.cursor.execute(
+                        "DELETE FROM blocked_apps WHERE app_name = ?",
+                        (app_name,)
+                    )
+                    logger.debug(f"Removed {app_name} from blocked_apps.")
+                else:
+                    logger.debug(f"{app_name} not found in blocked_apps.")
+        except Exception as e:
+            logger.exception(f"Failed to remove {app_name} from blocked_apps.")
+
+    def remove_from_blocked_url(self , url : str) -> None:
+        url = url.strip().lower()
+        try:
+            with self.connection:
+                if self.is_url_blocked(url):
+                    self.cursor.execute(
+                        "DELETE FROM blocked_urls WHERE url = ?",
+                        (url,)
+                    )
+                    logger.debug(f"Removed {url} from blocked_urls.")
+                else:
+                    logger.debug(f"{url} not found in blocked_urls.")
+        except Exception as e:
+            logger.exception(f"Failed to remove {url} from blocked_urls.")
+
+# -------------------------- HELPER FUNCTIONS ----------------------- #
+    def get_user_stat_id(self , date : str) -> int:
         """
         Get the foregin key ID to track appwise usage per day as user_stat_id.
         """
@@ -96,7 +181,7 @@ class Database:
         except Exception as e:
             logger.exception("Failed to fetch user_stat_id")
             return None
-    
+
     def load_existing_general_usage(self , date):
         """
         Get the foregin key ID to track appwise usage per day as user_stat_id.
@@ -125,7 +210,55 @@ class Database:
         except Exception as e:
             logger.exception("Failed to load app-wise usage data.")
             return {}
+    
+    def load_blocked_apps(self):
+        try:
+            with self.connection:
+                self.cursor.execute("SELECT app_name FROM blocked_apps")
+                result = self.cursor.fetchall()
+                return set(app_name[0] for app_name in result)
+        except Exception as e:
+            logger.exception("Failed to load existing blocked apps.")
+            return set()
 
+    def load_blocked_urls(self):
+        try:
+            with self.connection:
+                self.cursor.execute("""
+                    SELECT url FROM blocked_urls
+                """)
+                result = self.cursor.fetchall()
+                return set(url[0] for url in result)
+        except Exception as e:
+            logger.exception("Failed to load existing blocked urls.")
+            return set()
+    
+    def is_app_blocked(self, app_name: str) -> bool:
+        try:
+            with self.connection:
+                self.cursor.execute(
+                    "SELECT 1 FROM blocked_apps WHERE app_name = ? LIMIT 1", 
+                    (app_name,)
+                )
+                return self.cursor.fetchone() is not None
+        except Exception as e:
+            logger.exception(f"Failed to check if {app_name} is already blocked.")
+            return False
+        
+    def is_url_blocked(self , url : str) -> None:
+        try:
+            with self.connection:
+                self.cursor.execute(
+                    "SELECT 1 FROM blocked_urls WHERE url = ? LIMIT 1", 
+                    (url,)
+                )
+                return self.cursor.fetchone() is not None
+        except Exception as e:
+            logger.exception(f"Failed to check if {url} is already blocked.")
+            return False
+
+
+# --------------------- CLOSE CONNECTION ------------------------------ # 
     def close_connection(self):
         """
         Close cursor and connection to the database.

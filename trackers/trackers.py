@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
-from utils.utilities import run_every
-from main import UserActivityState
+from utils.utilities import Utility
+from state.userstate import UserActivityState
 from logs.app_logger import logger
 from utils import keywords
 from storage import db
@@ -35,7 +35,7 @@ def activity_tracker(state: UserActivityState):
                 user_stat_id = user_db.get_user_stat_id(date=date)
                 user_db.upsert_appwise_usertime_info(date, app, duration, user_stat_id)
                 
-    run_every(5, activity_logic)
+    Utility.run_every(5, activity_logic)
 
 # ------------------------
 # Reminder Logic
@@ -73,4 +73,4 @@ def reminder_logic(state: UserActivityState):
                 logger.debug(f"Total Break Time: {state.get_formatted_screen_time(state.total_break_duration)}")
                 state.break_start_time = None
 
-    run_every(5, main_logic)
+    Utility.run_every(5, main_logic)
