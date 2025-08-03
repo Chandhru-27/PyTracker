@@ -23,20 +23,26 @@ def activity_tracker(state: UserActivityState):
     Tracks basic activities like screentime, breaktime and appwise screentimes.
     """
     def activity_logic():
-        if not shutdown_event.is_set():
+        try:
+            if shutdown_event.is_set():
+                return
+
             state.update()
             with state.lock:
                 date = datetime.now().strftime("%Y-%m-%d")
-                if not shutdown_event.is_set():   
-                    user_db.insert_current_usertime_info(
-                        date=date, 
-                        screen_time =state.screen_time, 
-                        break_time=state.total_break_duration)
-                
-                for app, duration in state.screentime_per_app.items():
-                    if not shutdown_event.is_set():
-                        user_stat_id = user_db.get_user_stat_id(date=date)
-                        user_db.upsert_appwise_usertime_info(date, app, duration, user_stat_id)
+                app_data = state.screentime_per_app.copy()
+                screen = state.screen_time
+                brk = state.total_break_duration
+
+            user_db.update_daily_state(
+                date=date,
+                screen_time=screen,
+                break_time=brk,
+                app_usage_dict=app_data
+            )
+
+        except Exception as e:
+            logger.exception("Crash in activity_logic:")
                 
     Utility.run_every(5, activity_logic)
 
@@ -52,31 +58,31 @@ def reminder_logic(state: UserActivityState):
         idle_threshold = 60  # seconds of inactivity to count as break
 
         def main_logic():
-            nonlocal reminder_threshold, idle_threshold
-            with state.lock:
-                # Check for 45-minute reminder
-                if state.total_stretch_time >= reminder_threshold:
-                    if Utility.is_notification_disabled() or Utility.is_focus_assist_on():
-                        notification.customnotify()
-                    notification.notify()
-                    state.total_stretch_time = 0  # Reset stretch timer
+            try:
+                nonlocal reminder_threshold, idle_threshold
+                with state.lock:
+                    # Check for 45-minute reminder
+                    if state.total_stretch_time >= reminder_threshold:
+                        if Utility.is_notification_disabled() or Utility.is_focus_assist_on():
+                            notification.customnotify()
+                        notification.notify()
+                        state.total_stretch_time = 0
 
-                # Detect break start (if not video playback)
-                audio_app = state.active_window.lower()
-                is_video_playback = any(kw in audio_app for kw in keywords.video_keywords)
-                
-                if state.idle_time >= idle_threshold and not (is_video_playback and state.is_active_audio):
-                    if state.break_start_time is None:
-                        state.break_start_time = datetime.now() - timedelta(seconds=state.idle_time)
+                    audio_app = state.active_window.lower()
+                    is_video_playback = any(kw in audio_app for kw in keywords.video_keywords)
 
-                # Detect return from break
-                elif state.break_start_time is not None:
-                    break_end_time = datetime.now() - timedelta(seconds=state.idle_time)
-                    break_duration = (break_end_time - state.break_start_time).total_seconds()
+                    if state.idle_time >= idle_threshold and not (is_video_playback and state.is_active_audio):
+                        if state.break_start_time is None:
+                            state.break_start_time = datetime.now() - timedelta(seconds=state.idle_time)
 
-                    state.total_break_duration += break_duration
-                    logger.debug(f"Break Ended. Duration: {state.get_formatted_screen_time(break_duration)}")
-                    logger.debug(f"Total Break Time: {state.get_formatted_screen_time(state.total_break_duration)}")
-                    state.break_start_time = None
+                    elif state.break_start_time is not None:
+                        break_end_time = datetime.now() - timedelta(seconds=state.idle_time)
+                        break_duration = (break_end_time - state.break_start_time).total_seconds()
+                        state.total_break_duration += break_duration
+                        logger.debug(f"Break Ended. Duration: {state.get_formatted_screen_time(break_duration)}")
+                        logger.debug(f"Total Break Time: {state.get_formatted_screen_time(state.total_break_duration)}")
+                        state.break_start_time = None
+            except Exception as e:
+                logger.exception("Crash in reminder_logic:")
 
     Utility.run_every(5, main_logic)

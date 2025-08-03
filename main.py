@@ -39,25 +39,24 @@ if __name__ == "__main__":
     today = datetime.now().strftime("%Y-%m-%d")
     existing = user_db.load_existing_general_usage(date=today)
 
+    # Always load these first
+    blocked_apps = user_db.load_blocked_apps()
+    blocked_urls = user_db.load_blocked_urls()
+    state.blocked_apps = blocked_apps
+    state.blocked_urls = blocked_urls
+
     if existing:
         screen_time, break_time = existing
-        blocked_apps = user_db.load_blocked_apps()
-        blocked_urls = user_db.load_blocked_urls()
         app_usage = user_db.load_existing_appwise_usage(today)
-        state.load_existing_data(screen_time, break_time, app_usage , blocked_apps , blocked_urls)
+        state.load_existing_data(screen_time, break_time, app_usage, blocked_apps, blocked_urls)
         logger.debug(f"Loaded previous usage: Screen Time: {screen_time}, Break Time: {break_time}")
-        user_db.remove_from_blocked_apps("chrome.exe")
-        Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
-        # Print count of active threads
-
-        if state.blocked_apps:
-            logger.debug(state.blocked_apps)
-        if state.blocked_urls:
-            logger.debug(state.blocked_urls)
     else:
         logger.debug("No previous usage found. Starting fresh.")
-        if state.blocked_apps:
-            Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
+
+    # Always start blocker if apps are present
+    if state.blocked_apps:
+        Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
+
 
 
     # Start background threads for tracking and reminders

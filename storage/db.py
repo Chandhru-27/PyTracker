@@ -145,6 +145,49 @@ class Database:
         )
         logger.debug(f"Blocked URL removed: {url}")
 
+    def update_daily_state(self, date, screen_time, break_time, app_usage_dict):
+        """
+        Atomically update general usage and appwise usage in one transaction.
+        """
+        for attempt in range(MAX_RETRIES):
+            try:
+                with self.get_connection() as (conn, cursor):
+                    # Insert general usage
+                    cursor.execute("""
+                        INSERT INTO GENERAL_USAGE (date, screen_time, break_time)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(date)
+                        DO UPDATE SET
+                            screen_time = excluded.screen_time,
+                            break_time = excluded.break_time;
+                    """, (date, screen_time, break_time))
+
+                    # Get user_stat_id
+                    cursor.execute("SELECT id FROM GENERAL_USAGE WHERE date = ?", (date,))
+                    result = cursor.fetchone()
+                    if result:
+                        user_stat_id = result[0]
+                    else:
+                        raise Exception("Failed to get user_stat_id after insert.")
+
+                    # Insert app-wise usage
+                    for app, duration in app_usage_dict.items():
+                        cursor.execute("""
+                            INSERT INTO APP_USAGE (app_name, date, usage_duration, user_stat_id)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(app_name, date)
+                            DO UPDATE SET usage_duration = excluded.usage_duration;
+                        """, (app, date, duration, user_stat_id))
+
+                return  # success
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower():
+                    logger.debug(f"[TXN] DB locked, retry {attempt+1}/{MAX_RETRIES}")
+                    time.sleep(RETRY_DELAY)
+                else:
+                    raise
+        raise sqlite3.OperationalError("DB still locked after retries.")
+
     # ---------- Helpers ----------
     def get_user_stat_id(self, date: str):
         result = self.fetch_one("SELECT id FROM GENERAL_USAGE WHERE date = ?", (date,))
