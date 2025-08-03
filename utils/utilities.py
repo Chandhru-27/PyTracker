@@ -7,6 +7,7 @@ import threading
 import win32gui
 import psutil
 import ctypes
+import winreg
 import time
 import wmi
 import os
@@ -14,13 +15,14 @@ import os
 # -------------------------
 # Utility Functions
 # -------------------------
+shutdown_event = threading.Event()
 
 class Utility:
     audio_lock = threading.Lock()
 
     @staticmethod
     def get_idle_time():
-        """
+        """`
         Returns the idle time in seconds using Windows APIs.
         """
         class LASTINPUTINFO(ctypes.Structure):
@@ -112,46 +114,67 @@ class Utility:
 
     @staticmethod
     def background_scanner(blocked_apps: set, scan_interval: int = 5):
-        """
-        Continuously scans for blocked apps and kills them if found.
-        """
-        while True:
-            for proc in psutil.process_iter(['name', 'pid']):
-                try:
-                    if proc.info['name'] and proc.info['name'].lower() in blocked_apps:
-                        logger.debug(f"[SCAN] Blocking {proc.info['name']} (PID: {proc.info['pid']})")
-                        Utility.kill_process_tree(proc.info['pid'])
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-            time.sleep(scan_interval)
+        """Scans for and kills blocked apps, with fast shutdown support."""
+        while not shutdown_event.is_set():
+            try:
+                for proc in psutil.process_iter(['name', 'pid']):
+                    if shutdown_event.is_set():  # Check during iteration
+                        break
+                    try:
+                        proc_name = proc.info['name']
+                        if proc_name and proc_name.lower() in blocked_apps:
+                            logger.debug(f"[SCAN] Blocking {proc_name} (PID: {proc.info['pid']})")
+                            Utility.kill_process_tree(proc.info['pid'])
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                
+                # Sleep in small chunks to respond quickly to shutdown
+                for _ in range(scan_interval):
+                    if shutdown_event.is_set():
+                        break
+                    time.sleep(1)
+            except Exception as e:
+                logger.error(f"[SCAN] Unexpected error: {e}", exc_info=True)
+                if shutdown_event.is_set():
+                    break
 
     @staticmethod
     def wmi_event_watcher(blocked_apps: set):
-        """Blocks new processes instantly when they are created."""
         pythoncom.CoInitialize()
         try:
-            while True:
+            while not shutdown_event.is_set():
                 try:
                     c = wmi.WMI()
                     watcher = c.Win32_Process.watch_for("creation")
-                    logger.debug("[WMI] Connected to process creation watcher")
+                    logger.debug("[WMI] Listening for new processes...")
 
-                    while True:
+                    while not shutdown_event.is_set():
                         try:
-                            new_proc = watcher()
-                            if new_proc.Caption and new_proc.Caption.lower() in blocked_apps:
-                                logger.debug(f"[EVENT] Blocking {new_proc.Caption} (PID: {new_proc.ProcessId})")
+                            new_proc = watcher(timeout_ms=1000)  # 1-second timeout
+
+                            if new_proc and new_proc.Name.lower() in blocked_apps:
+                                logger.info(f"Blocking {new_proc.Name} (PID: {new_proc.ProcessId})")
                                 Utility.kill_process_tree(new_proc.ProcessId)
+
                         except wmi.x_wmi as e:
-                            logger.debug(f"[WMI] Watcher error, reconnecting: {e}")
-                            break  # Exit inner loop to reconnect
+                            if "timed out" in str(e):
+                                continue  # Normal timeout, retry
+                            else:
+                                logger.debug(f"[WMI] Event error: {e}")
+                                break  # Reconnect watcher on actual error
+
+                        except Exception as e:
+                            logger.error(f"[WMI] Unexpected error: {e}", exc_info=True)
+                            break
 
                 except Exception as e:
-                    logger.debug(f"[WMI] Connection error: {e}")
-                    time.sleep(5)  # Wait before retry
+                    logger.error(f"[WMI] Connection failed: {e}")
+                    if shutdown_event.is_set():
+                        break
+                    time.sleep(5)  # Retry after delay
+
         finally:
             pythoncom.CoUninitialize()
-
 
     @staticmethod
     def start_app_blocker(blocked_apps: set, scan_interval: int = 5):
@@ -220,22 +243,77 @@ class Utility:
             return ctypes.windll.shell32.IsUserAnAdmin()
         except:
             return False
+    
+    @staticmethod
+    def is_notification_disabled():
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\PushNotifications"
+            )
+            value , _ = winreg.QueryValueEx(key , "ToastEnabled")
+            winreg.CloseKey(key)
+            return value == 0
+        except FileNotFoundError:
+            return None
+    
+    @staticmethod
+    def is_focus_assist_on():
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\PushNotifications"
+            )
+            value , _ = winreg.QueryValueEx(key , "QuietHoursActive")
+            winreg.CloseKey(key)
+            return value == 1
+        except FileNotFoundError:
+            return None
 
     @staticmethod
-    def run_every(interval, func, *args, **kwargs):
+    def run_every(interval: float, func: callable, *args, **kwargs):
         """
-        Helper function to avoid time skips and still call the function with time intervals.
+        Precise interval timer with:
+        - Zero time drift (self-correcting)
+        - Shutdown safety
+        - Error handling
+        - Resource monitoring
         """
         next_time = time.time()
-        while True:
-            func(*args, **kwargs)
-            next_time += interval
-            sleep_time = next_time - time.time()
-            process = psutil.Process(os.getpid())
-            logger.debug(f"Memory Usage: {process.memory_info().rss / 1024 ** 2:.2f} MB")
-            logger.debug(f"CPU Usage: {process.cpu_percent(interval=1)}%")
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            else:
-                # If delayed too much, resync to current time
-                next_time = time.time()
+        while not shutdown_event.is_set():
+            try:
+                # Execute the target function
+                func(*args, **kwargs)  
+                
+                # Calculate dynamic sleep time
+                next_time += interval
+                sleep_time = next_time - time.time()
+                
+                # Log resources (optional)
+                if __debug__:  # Only log in debug mode
+                    proc = psutil.Process()
+                    logger.debug(
+                        f"Resources | "
+                        f"CPU: {proc.cpu_percent():.1f}% | "
+                        f"RAM: {proc.memory_info().rss / 1024 ** 2:.1f} MB"
+                    )
+                
+                # Handle delays intelligently
+                if sleep_time > 0:
+                    # Sleep in chunks to respond to shutdown quickly
+                    for _ in range(int(sleep_time * 10)):
+                        if shutdown_event.is_set():
+                            return
+                        time.sleep(0.1)
+                else:
+                    # If behind schedule, skip sleep but log the delay
+                    delay = -sleep_time
+                    if delay > interval * 0.1:  # Only log significant delays
+                        logger.warning(f"Can't keep up! Delay: {delay:.2f}s")
+                    next_time = time.time()  # Full resync
+
+            except Exception as e:
+                logger.error(f"Periodic task crashed: {e}", exc_info=True)
+                if shutdown_event.is_set():
+                    return  # Avoid retry during shutdown
+                time.sleep(min(5, interval))  # Backoff before retry

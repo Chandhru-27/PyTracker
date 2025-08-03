@@ -149,7 +149,8 @@ class Database:
     def get_user_stat_id(self, date: str):
         result = self.fetch_one("SELECT id FROM GENERAL_USAGE WHERE date = ?", (date,))
         return result[0] if result else None
-
+    
+    
     def load_existing_general_usage(self, date):
         return self.fetch_one(
             "SELECT screen_time, break_time FROM GENERAL_USAGE WHERE date = ?",

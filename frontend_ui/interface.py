@@ -11,7 +11,6 @@ from PIL import Image, ImageTk
 
 #creating a window
 window = Tk()
-window.state("zoomed")  # Start maximized
 screen_width = window.winfo_screenwidth()
 screen_height = window.winfo_screenheight()
 window.geometry(f"{screen_width}x{screen_height}")
@@ -37,7 +36,7 @@ home_btn=Button(
     left_frame,
     height=4,
     width=21,
-    text="      Home",
+    text="  Home",
     bg=blue_color,
     fg="white",
     font=("Agency FB",21),
@@ -50,7 +49,7 @@ home_btn.bind("<Enter>",on_enter)#binding home button with hover colours and pla
 home_btn.bind("<Leave>",on_leave)
 home_btn.place(x=-6,y=4)
 #creating and placing home page logo
-home_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\home.svg").resize((50,50))
+home_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\home.png").resize((50,50))
 home_logo=ImageTk.PhotoImage(home_img)
 logo_label_home=Label(window,image=home_logo,bg=blue_color,bd=0,highlightthickness=0,fg="white")
 logo_label_home.place(x=8,y=53)
@@ -63,7 +62,7 @@ logo_label_home.bind("<Leave>", lambda e: [on_leave(e), home_btn.config(bg=blue_
 #creating history button
 history_btn = Button(
     master=left_frame,
-    text="      History",
+    text="  History",
     height=3,
     width=21,
     bg=blue_color,
@@ -76,7 +75,7 @@ history_btn = Button(
     )     
 history_btn.place(x=0, y=254)
 #creating history logo and placing
-history_img = Image.open(r"C:\Dev\project_pymonitor\frontend_ui\history.svg").resize((50, 50))
+history_img = Image.open(r"C:\Dev\project_pymonitor\frontend_ui\history.png").resize((50, 50))
 history_logo = ImageTk.PhotoImage(history_img)
 logo_label_history = Label(window, image=history_logo,bg=blue_color,bd=0, highlightthickness=0,fg="white")
 logo_label_history.place(x=8,y=293)
@@ -89,7 +88,7 @@ logo_label_history.bind("<Leave>", lambda e: [on_leave(e), history_btn.config(bg
 #creating block button 
 block_app_btn = Button(
     master=left_frame,
-    text="      Restricted",
+    text="  Restricted",
     height=3,
     width=21,
     bg=blue_color,
@@ -104,7 +103,7 @@ block_app_btn.place(x=0, y=136)
 block_app_btn.bind("<Enter>",on_enter)
 block_app_btn.bind("<Leave>",on_leave)
 #creating block logo and binding with app
-block_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\block.svg").resize((50,50))
+block_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\block.png").resize((50,50))
 block_logo=ImageTk.PhotoImage(block_img)
 logo_label_block=Label(window,image=block_logo,bg=blue_color,fg="white",bd=0,highlightthickness=0)
 logo_label_block.place(x=8,y=167)
@@ -116,7 +115,7 @@ logo_label_block.bind("<Leave>", lambda e: [on_leave(e), block_app_btn.config(bg
 #creating settings button
 settings_btn = Button(
     master=left_frame,
-    text="      Settings",
+    text="  Settings",
     height=3,
     width=21,
     bg=blue_color,
@@ -128,7 +127,7 @@ settings_btn = Button(
 )
 settings_btn.place(x=0, y=372)
 #creating settings logo and binding
-settings_img = Image.open(r"C:\Dev\project_pymonitor\frontend_ui\settings.svg").resize((50, 50))
+settings_img = Image.open(r"C:\Dev\project_pymonitor\frontend_ui\settings.png").resize((50, 50))
 settings_logo = ImageTk.PhotoImage(settings_img)
 logo_label_settings = Label(window, image=settings_logo,bg=blue_color,bd=0, highlightthickness=0)
 logo_label_settings.place(x=8,y=405)
@@ -138,7 +137,7 @@ logo_label_settings.bind("<Enter>", lambda e: [on_enter(e), settings_btn.config(
 logo_label_settings.bind("<Leave>", lambda e: [on_leave(e), settings_btn.config(bg=blue_color)])
 
 #creating and placing app logo
-logo_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\logo.svg").resize((120,120))
+logo_img=Image.open(r"C:\Dev\project_pymonitor\frontend_ui\logo.png").resize((120,120))
 logo_logo=ImageTk.PhotoImage(logo_img)
 logo_label_logo=Label(window,image=logo_logo,bg=blue_color,bd=0,highlightthickness=0,width=200)
 logo_label_logo.place(x=10,y=700)
@@ -152,7 +151,7 @@ bottom_border3=Frame(master=left_frame,bg="#66696D",height=2,width=215)
 bottom_border3.place(x=0,y=370)
 
 #variables to hold screen time values
-screen_time_value=2
+screen_time_value=12
 screen_time_mins=int((screen_time_value-int(screen_time_value))*100)
 screen_time_hours=int(screen_time_value)
 max_value = 24
@@ -299,5 +298,3 @@ settings_btn.config(command=settings_page)
 
 
 window.mainloop()
-
-
