@@ -177,7 +177,6 @@ class Utility:
         except Exception as e:
             print("Error opening file/Blocking website")
         
-
     @staticmethod
     def clean_hosts_file(HOST_PATH: str, BLOCKED_DOMAINS: set):
         try:
@@ -214,6 +213,13 @@ class Utility:
             logger.debug("[+] DNS cache flushed.")
         except subprocess.CalledProcessError as e:
             logger.debug(f"[-] Failed to flush DNS: {e}")
+        
+    @staticmethod
+    def is_admin():
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        except:
+            return False
 
     @staticmethod
     def run_every(interval, func, *args, **kwargs):

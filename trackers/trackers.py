@@ -13,9 +13,6 @@ user_db = db.Database()
 user_db.create_general_user_stats()
 user_db.create_appwise_usage()
 
-# Ensure DB connection is closed gracefully on exit
-atexit.register(user_db.close_connection)
-
 # ------------------------
 # Activity Tracker Logic
 # ------------------------

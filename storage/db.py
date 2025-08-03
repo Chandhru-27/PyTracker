@@ -1,277 +1,189 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import sqlite3
+import time
 from storage import schema
 from logs.db_logger import logger
 import atexit
+from contextlib import contextmanager
+
+DB_PATH = "storage/User_db"
+TIMEOUT = 10          # Seconds to wait for a locked DB
+MAX_RETRIES = 5       # Retry attempts on lock
+RETRY_DELAY = 0.2     # Seconds between retries
+
 
 class Database:
-    """
-    Inside the Database class establish connection and other utilities
-    """
+    _wal_set = False  # Class-level flag so WAL mode is enabled only once
+
     def __init__(self):
-        """
-        Establish connection to the local database file.
-        """
+        """Initialize database connection settings."""
         try:
-            self.connection = sqlite3.connect("storage/User_db" , check_same_thread=False)
-            self.connection.execute("PRAGMA foreign_keys = ON")
-            self.cursor = self.connection.cursor()
-            logger.debug("Connected to SQLite database")
+            if not Database._wal_set:
+                self._set_wal_mode_once()
+                Database._wal_set = True
+                logger.debug("SQLite ready (WAL mode, FK enabled).")
         except Exception as e:
-            logger.exception("Failed to connect to SQLite database")
-    
-# --------------------------- TABLE CREATION --------------------------------- #
+            logger.exception(f"DB init failed: {e}")
+
+    def _set_wal_mode_once(self):
+        """Set WAL mode with retry to avoid lock issues."""
+        for attempt in range(MAX_RETRIES):
+            try:
+                conn = sqlite3.connect(DB_PATH, timeout=TIMEOUT, check_same_thread=False)
+                conn.execute("PRAGMA foreign_keys = ON;")
+                conn.execute("PRAGMA journal_mode = WAL;")
+                conn.close()
+                return
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower():
+                    logger.debug(f"WAL setup locked, retry {attempt+1}/{MAX_RETRIES}")
+                    time.sleep(RETRY_DELAY)
+                else:
+                    raise
+        raise sqlite3.OperationalError("Failed to set WAL mode after retries.")
+
+    @contextmanager
+    def get_connection(self):
+        """Fresh connection per operation (thread-safe)."""
+        conn = sqlite3.connect(DB_PATH, timeout=TIMEOUT, check_same_thread=False)
+        conn.execute("PRAGMA foreign_keys = ON;")
+        try:
+            yield conn, conn.cursor()
+            conn.commit()
+        finally:
+            conn.close()
+
+    def execute_with_retry(self, query, params=()):
+        """Run a write query with retry on lock."""
+        for attempt in range(MAX_RETRIES):
+            try:
+                with self.get_connection() as (conn, cursor):
+                    cursor.execute(query, params)
+                return
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower():
+                    logger.debug(f"DB locked, retry {attempt+1}/{MAX_RETRIES}")
+                    time.sleep(RETRY_DELAY)
+                else:
+                    raise
+        raise sqlite3.OperationalError("DB still locked after retries.")
+
+    def fetch_one(self, query, params=()):
+        with self.get_connection() as (conn, cursor):
+            cursor.execute(query, params)
+            return cursor.fetchone()
+
+    def fetch_all(self, query, params=()):
+        with self.get_connection() as (conn, cursor):
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
+    # ---------- Table creation ----------
     def create_general_user_stats(self):
-        """
-        Create user table for general stats.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute(schema.CREATE_TABLE_USER_STATS)
-                logger.debug("User stats table created successfully.")
-        except Exception as e:
-            logger.exception("Failed to create GENERAL_USAGE table.")
-    
+        self.execute_with_retry(schema.CREATE_TABLE_USER_STATS)
+        logger.debug("Table GENERAL_USAGE ready.")
+
     def create_appwise_usage(self):
-        """
-        Create user table for appwise stats.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute(schema.CREATE_TABLE_APPLICATION_USAGE)
-                logger.debug("App-wise usage table created successfully.")
-        except Exception as e:
-            logger.exception("Failed to create APP_USAGE table.")
-    
+        self.execute_with_retry(schema.CREATE_TABLE_APPLICATION_USAGE)
+        logger.debug("Table APP_USAGE ready.")
+
     def create_blocked_apps(self):
-        """
-        Create table to store blocked apps.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute(schema.CREATE_TABLE_BLOCKED_APPS)
-                logger.debug("Blocked apps table created successfully.")
-        except Exception as e:
-            logger.exception("Failed to create blocked apps tabble.")
+        self.execute_with_retry(schema.CREATE_TABLE_BLOCKED_APPS)
+        logger.debug("Table BLOCKED_APPS ready.")
 
     def create_blocked_urls(self):
-        """
-        Create table to store blocked urls.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute(schema.CREATE_TABLE_BLOCKED_URLS)
-                logger.debug("Blocked urls table created successfully.")
-        except Exception as e:
-            logger.exception("Failed to create blocked urls tabble.")
+        self.execute_with_retry(schema.CREATE_TABLE_BLOCKED_URLS)
+        logger.debug("Table BLOCKED_URLS ready.")
 
-# --------------------------- INSERTION & DELETION --------------------------------- # 
-    def insert_current_usertime_info(self , date , screen_time , break_time):
-        """
-        Insert usertime information into general usage table.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute("""
-                INSERT INTO GENERAL_USAGE (date , screen_time , break_time)
-                values (?, ?, ?) 
-                ON CONFLICT(date)
-                DO UPDATE SET
-                    screen_time = excluded.screen_time,
-                    break_time = excluded.break_time;                             
-                """,(date , screen_time , break_time))
-                logger.debug(f"Inserted stats for {date} - Screen Time: {screen_time}, Break Time: {break_time}")
-        except Exception as e:
-            logger.exception("Failed to insert into GENERAL_USAGE.")
+    # ---------- Insert / Update ----------
+    def insert_current_usertime_info(self, date, screen_time, break_time):
+        self.execute_with_retry("""
+            INSERT INTO GENERAL_USAGE (date, screen_time, break_time)
+            VALUES (?, ?, ?)
+            ON CONFLICT(date)
+            DO UPDATE SET
+                screen_time = excluded.screen_time,
+                break_time = excluded.break_time;
+        """, (date, screen_time, break_time))
+        logger.debug(f"General usage updated for {date}")
 
     def upsert_appwise_usertime_info(self, date, app_name, duration, user_stat_id):
-        """
-        Insert appwise usertime info, if not available then update into appwise stat table.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute("""
-                    INSERT INTO APP_USAGE (app_name, date, usage_duration, user_stat_id)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(app_name, date)
-                    DO UPDATE SET usage_duration = excluded.usage_duration;
-                """, (app_name, date, duration, user_stat_id))
-                logger.debug(f"Upserted usage for app '{app_name}': +{duration}s on {date}")
-        except Exception as e:
-            logger.exception("Failed to upsert app-wise usage data.")
+        self.execute_with_retry("""
+            INSERT INTO APP_USAGE (app_name, date, usage_duration, user_stat_id)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(app_name, date)
+            DO UPDATE SET usage_duration = excluded.usage_duration;
+        """, (app_name, date, duration, user_stat_id))
+        logger.debug(f"App usage updated: {app_name} ({duration}s)")
 
-    def insert_blocked_app(self, app_name: str) -> None:
-        app_name = app_name.strip().lower()
-        try:
-            with self.connection:
-                if not self.is_app_blocked(app_name):
-                    self.cursor.execute(
-                        "INSERT INTO blocked_apps (app_name) VALUES (?)",
-                        (app_name,)
-                    )
-                    logger.debug(f"Inserted {app_name} into blocked_apps.")
-                else:
-                    logger.debug(f"{app_name} already in blocked_apps.")
-        except Exception as e:
-            logger.exception(f"Failed to insert {app_name} into blocked apps.")
+    def insert_blocked_app(self, app_name: str):
+        self.execute_with_retry(
+            "INSERT OR IGNORE INTO blocked_apps (app_name) VALUES (?)",
+            (app_name.strip().lower(),)
+        )
+        logger.debug(f"Blocked app added: {app_name}")
 
-    def insert_blocked_url(self , url : str) -> None:
-        url = url.strip().lower()
-        try:
-            with self.connection:
-                if not self.is_url_blocked(url):
-                    self.cursor.execute(
-                        "INSERT INTO blocked_urls (url) VALUES (?)",
-                        (url,)
-                    )
-                    logger.debug(f"Inserted {url} into blocked_urls.")
-                else:
-                    logger.debug(f"{url} already in blocked_urls.")
-        except Exception as e:
-            logger.exception(f"Failed to insert {url} into blockd urls.")
+    def insert_blocked_url(self, url: str):
+        self.execute_with_retry(
+            "INSERT OR IGNORE INTO blocked_urls (url) VALUES (?)",
+            (url.strip().lower(),)
+        )
+        logger.debug(f"Blocked URL added: {url}")
 
-    def remove_from_blocked_apps(self, app_name: str) -> None:
-        app_name = app_name.strip().lower()
-        try:
-            with self.connection:
-                if self.is_app_blocked(app_name):
-                    self.cursor.execute(
-                        "DELETE FROM blocked_apps WHERE app_name = ?",
-                        (app_name,)
-                    )
-                    logger.debug(f"Removed {app_name} from blocked_apps.")
-                else:
-                    logger.debug(f"{app_name} not found in blocked_apps.")
-        except Exception as e:
-            logger.exception(f"Failed to remove {app_name} from blocked_apps.")
+    def remove_from_blocked_apps(self, app_name: str):
+        self.execute_with_retry(
+            "DELETE FROM blocked_apps WHERE app_name = ?",
+            (app_name.strip().lower(),)
+        )
+        logger.debug(f"Blocked app removed: {app_name}")
 
-    def remove_from_blocked_url(self , url : str) -> None:
-        url = url.strip().lower()
-        try:
-            with self.connection:
-                if self.is_url_blocked(url):
-                    self.cursor.execute(
-                        "DELETE FROM blocked_urls WHERE url = ?",
-                        (url,)
-                    )
-                    logger.debug(f"Removed {url} from blocked_urls.")
-                else:
-                    logger.debug(f"{url} not found in blocked_urls.")
-        except Exception as e:
-            logger.exception(f"Failed to remove {url} from blocked_urls.")
+    def remove_from_blocked_url(self, url: str):
+        self.execute_with_retry(
+            "DELETE FROM blocked_urls WHERE url = ?",
+            (url.strip().lower(),)
+        )
+        logger.debug(f"Blocked URL removed: {url}")
 
-# -------------------------- HELPER FUNCTIONS ----------------------- #
-    def get_user_stat_id(self , date : str) -> int:
-        """
-        Get the foregin key ID to track appwise usage per day as user_stat_id.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute(""" SELECT id FROM GENERAL_USAGE WHERE date = ?""",(date,))
-                result = self.cursor.fetchone()
-                if result:
-                    user_stat_id = result[0]
-                    logger.debug(f"User stat id fetched as {user_stat_id}")
-                    return user_stat_id
-                else:
-                    logger.debug("No entry found for the given date.")
-                    return None
-        except Exception as e:
-            logger.exception("Failed to fetch user_stat_id")
-            return None
+    # ---------- Helpers ----------
+    def get_user_stat_id(self, date: str):
+        result = self.fetch_one("SELECT id FROM GENERAL_USAGE WHERE date = ?", (date,))
+        return result[0] if result else None
 
-    def load_existing_general_usage(self , date):
-        """
-        Get the foregin key ID to track appwise usage per day as user_stat_id.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute("""
-                SELECT screen_time, break_time FROM GENERAL_USAGE WHERE date = ?
-            """, (date,))
-            return self.cursor.fetchone()
-        except Exception as e:
-            logger.exception("Failed to load existing usage data.")
-            return None
+    def load_existing_general_usage(self, date):
+        return self.fetch_one(
+            "SELECT screen_time, break_time FROM GENERAL_USAGE WHERE date = ?",
+            (date,)
+        )
 
-    def load_existing_appwise_usage(self , date):
-        """
-        Load existing data to the variables for every re-start of the application.
-        """
-        try:
-            with self.connection:
-                self.cursor.execute("""
-                    SELECT app_name, usage_duration FROM APP_USAGE WHERE date = ?
-                """, (date,))
-                result = self.cursor.fetchall()
-                return {app: duration for app, duration in result}
-        except Exception as e:
-            logger.exception("Failed to load app-wise usage data.")
-            return {}
+    def load_existing_appwise_usage(self, date):
+        data = self.fetch_all(
+            "SELECT app_name, usage_duration FROM APP_USAGE WHERE date = ?",
+            (date,)
+        )
+        return {app: duration for app, duration in data}
     
     def load_blocked_apps(self):
-        try:
-            with self.connection:
-                self.cursor.execute("SELECT app_name FROM blocked_apps")
-                result = self.cursor.fetchall()
-                return set(app_name[0] for app_name in result)
-        except Exception as e:
-            logger.exception("Failed to load existing blocked apps.")
-            return set()
+        return {row[0] for row in self.fetch_all("SELECT app_name FROM blocked_apps")}
 
     def load_blocked_urls(self):
-        try:
-            with self.connection:
-                self.cursor.execute("""
-                    SELECT url FROM blocked_urls
-                """)
-                result = self.cursor.fetchall()
-                return set(url[0] for url in result)
-        except Exception as e:
-            logger.exception("Failed to load existing blocked urls.")
-            return set()
-    
+        return {row[0] for row in self.fetch_all("SELECT url FROM blocked_urls")}
+
     def is_app_blocked(self, app_name: str) -> bool:
-        try:
-            with self.connection:
-                self.cursor.execute(
-                    "SELECT 1 FROM blocked_apps WHERE app_name = ? LIMIT 1", 
-                    (app_name,)
-                )
-                return self.cursor.fetchone() is not None
-        except Exception as e:
-            logger.exception(f"Failed to check if {app_name} is already blocked.")
-            return False
-        
-    def is_url_blocked(self , url : str) -> None:
-        try:
-            with self.connection:
-                self.cursor.execute(
-                    "SELECT 1 FROM blocked_urls WHERE url = ? LIMIT 1", 
-                    (url,)
-                )
-                return self.cursor.fetchone() is not None
-        except Exception as e:
-            logger.exception(f"Failed to check if {url} is already blocked.")
-            return False
+        return self.fetch_one(
+            "SELECT 1 FROM blocked_apps WHERE app_name = ? LIMIT 1",
+            (app_name,)
+        ) is not None
 
+    def is_url_blocked(self, url: str) -> bool:
+        return self.fetch_one(
+            "SELECT 1 FROM blocked_urls WHERE url = ? LIMIT 1",
+            (url,)
+        ) is not None
 
-# --------------------- CLOSE CONNECTION ------------------------------ # 
     def close_connection(self):
-        """
-        Close cursor and connection to the database.
-        """
-        try:
-            if self.cursor:
-                self.cursor.close()
-                logger.debug("Database cursor closed.")
-            if self.connection:
-                self.connection.close()
-                logger.debug("Database connection closed.")
-        except Exception as e:
-            logger.exception("Error while closing database resources.")
+        """No persistent connection to close in this design."""
+        logger.debug("No persistent DB connection to close.")
 
 
 if __name__ == "__main__":

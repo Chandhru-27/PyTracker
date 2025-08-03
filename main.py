@@ -1,10 +1,12 @@
 from state.userstate import UserActivityState
-from utils.utilities import Utility
 from datetime import datetime , timedelta
+from utils.utilities import Utility
 from logs.app_logger import logger
 from trackers import trackers
 from storage import db
 import threading
+import ctypes
+import sys
 import os
 
 # -------------------------
@@ -12,6 +14,13 @@ import os
 # ------------------------- 
 
 if __name__ == "__main__":
+    # Run as admin if not already
+    if not Utility.is_admin():
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, " ".join(sys.argv), None, 1
+        )
+        logger.debug("Running as admin")
+
     # Initialize the database and activity state
     user_db = db.Database()
     state = UserActivityState()
@@ -27,7 +36,7 @@ if __name__ == "__main__":
         app_usage = user_db.load_existing_appwise_usage(today)
         state.load_existing_data(screen_time, break_time, app_usage , blocked_apps , blocked_urls)
         logger.debug(f"Loaded previous usage: Screen Time: {screen_time}, Break Time: {break_time}")
-
+        user_db.remove_from_blocked_apps("chrome.exe")
         Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
 
         if state.blocked_apps:

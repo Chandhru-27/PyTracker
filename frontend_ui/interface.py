@@ -6,12 +6,12 @@ import tkinter as tk
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 
-
 from tkinter import *
 from PIL import Image, ImageTk
 
 #creating a window
 window = Tk()
+window.state("zoomed")  # Start maximized
 screen_width = window.winfo_screenwidth()
 screen_height = window.winfo_screenheight()
 window.geometry(f"{screen_width}x{screen_height}")

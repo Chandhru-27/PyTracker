@@ -28,7 +28,7 @@ class UserActivityState:
         self.last_check = datetime.now()
         self.lock = threading.Lock()
         self.screentime_per_app = {}
-        self.blocked_apps = {"steam.exe"}
+        self.blocked_apps = {}
         self.blocked_urls = set()
 
     def update(self):
