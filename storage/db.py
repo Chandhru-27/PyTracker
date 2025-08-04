@@ -97,25 +97,6 @@ class Database:
         logger.debug("Table BLOCKED_URLS ready.")
 
     # ---------- Insert / Update ----------
-    def insert_current_usertime_info(self, date, screen_time, break_time):
-        self.execute_with_retry("""
-            INSERT INTO GENERAL_USAGE (date, screen_time, break_time)
-            VALUES (?, ?, ?)
-            ON CONFLICT(date)
-            DO UPDATE SET
-                screen_time = excluded.screen_time,
-                break_time = excluded.break_time;
-        """, (date, screen_time, break_time))
-        logger.debug(f"General usage updated for {date}")
-
-    def upsert_appwise_usertime_info(self, date, app_name, duration, user_stat_id):
-        self.execute_with_retry("""
-            INSERT INTO APP_USAGE (app_name, date, usage_duration, user_stat_id)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(app_name, date)
-            DO UPDATE SET usage_duration = excluded.usage_duration;
-        """, (app_name, date, duration, user_stat_id))
-        logger.debug(f"App usage updated: {app_name} ({duration}s)")
 
     def insert_blocked_app(self, app_name: str):
         self.execute_with_retry(
@@ -148,11 +129,27 @@ class Database:
     def update_daily_state(self, date, screen_time, break_time, app_usage_dict):
         """
         Atomically update general usage and appwise usage in one transaction.
+        Automatically handles date rollover by creating a new row with 0 values 
+        if the current date is different from the latest entry in the DB.
         """
         for attempt in range(MAX_RETRIES):
             try:
                 with self.get_connection() as (conn, cursor):
-                    # Insert general usage
+                    
+                    # Check latest date in DB
+                    cursor.execute("SELECT date FROM GENERAL_USAGE ORDER BY date DESC LIMIT 1")
+                    last_row = cursor.fetchone()
+
+                    if not last_row or last_row[0] != date:
+                        # New day detected → insert fresh zeroed row
+                        cursor.execute("""
+                            INSERT INTO GENERAL_USAGE (date, screen_time, break_time)
+                            VALUES (?, 0, 0)
+                            ON CONFLICT(date) DO NOTHING;
+                        """, (date,))
+                        conn.commit()
+
+                    # Insert/update today's general usage
                     cursor.execute("""
                         INSERT INTO GENERAL_USAGE (date, screen_time, break_time)
                         VALUES (?, ?, ?)
@@ -162,15 +159,14 @@ class Database:
                             break_time = excluded.break_time;
                     """, (date, screen_time, break_time))
 
-                    # Get user_stat_id
+                    # Get user_stat_id for today's row
                     cursor.execute("SELECT id FROM GENERAL_USAGE WHERE date = ?", (date,))
                     result = cursor.fetchone()
-                    if result:
-                        user_stat_id = result[0]
-                    else:
+                    if not result:
                         raise Exception("Failed to get user_stat_id after insert.")
+                    user_stat_id = result[0]
 
-                    # Insert app-wise usage
+                    # Insert/update app-wise usage for today
                     for app, duration in app_usage_dict.items():
                         cursor.execute("""
                             INSERT INTO APP_USAGE (app_name, date, usage_duration, user_stat_id)
@@ -180,12 +176,14 @@ class Database:
                         """, (app, date, duration, user_stat_id))
 
                 return  # success
+
             except sqlite3.OperationalError as e:
                 if "locked" in str(e).lower():
                     logger.debug(f"[TXN] DB locked, retry {attempt+1}/{MAX_RETRIES}")
                     time.sleep(RETRY_DELAY)
                 else:
                     raise
+
         raise sqlite3.OperationalError("DB still locked after retries.")
 
     # ---------- Helpers ----------

@@ -57,8 +57,6 @@ if __name__ == "__main__":
     if state.blocked_apps:
         Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
 
-
-
     # Start background threads for tracking and reminders
     tracker_thread = threading.Thread(target=trackers.activity_tracker, args=(state,), daemon=True)
     reminder_thread = threading.Thread(target=trackers.reminder_logic, args=(state,), daemon=True)

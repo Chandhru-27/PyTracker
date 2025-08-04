@@ -13,10 +13,6 @@ import os
 # -------------------------------
 
 class UserActivityState:
-    """
-    Manages and maintains the current state of the user's activity including screen time,
-    idle status, app usage, break tracking, and app blocking.
-    """
     def __init__(self):
         self.idle_time = 0
         self.active_window = ""
@@ -26,54 +22,59 @@ class UserActivityState:
         self.total_stretch_time = 0
         self.is_active_audio = False
         self.last_check = datetime.now()
+        self.last_date = self.last_check.date()  # Track date for rollover
         self.lock = threading.Lock()
         self.screentime_per_app = {}
         self.blocked_apps = {}
         self.blocked_urls = set()
 
     def update(self):
-        """
-        Updates the current state of user activity:
-        - Checks idle time and active window
-        - Determines whether the user is active (based on movement or video/audio activity)
-        - Tracks screen time and break time
-        - Kills blocked applications
-        """
         with self.lock:
-            now = datetime.now() # Get the current date
-            process_name = Utility.get_active_window_title() # Get the current process name as ".exe"
-            window = os.path.splitext(process_name)[0].lower() # Split and clean the name for db usage
-            audio = Utility.get_active_audio_status() # Check if audio is running in the background
-            
-            elapsed = (now - self.last_check).total_seconds() # Calculate elapsed time
-            # Store the output values to class objects
-            self.idle_time = Utility.get_idle_time() 
+            now = datetime.now()
+            today = now.date()
+
+            # Detect midnight rollover
+            if today != self.last_date:
+                self.reset_daily_counters()
+                self.last_date = today
+                logger.debug("Day rollover detect and handled properly.")
+
+            process_name = Utility.get_active_window_title()
+            window = os.path.splitext(process_name)[0].lower()
+            audio = Utility.get_active_audio_status()
+
+            elapsed = (now - self.last_check).total_seconds()
+            self.idle_time = Utility.get_idle_time()
             self.active_window = window
             self.is_active_audio = audio
 
-            # Get audio and video playback status
             audio_app = self.active_window.lower()
             is_video_playback = any(kw in audio_app for kw in keywords.video_keywords)
 
-            # User is considered active if:
-            # 1. Not idle (idle_time < 60), OR
-            # 2. Watching video with audio playing
             is_active_user = (self.idle_time < 60) or (is_video_playback and self.is_active_audio)
 
-            # Calculate the values
             if is_active_user:
                 self.screen_time += elapsed
                 self.total_stretch_time += elapsed
                 self.screentime_per_app[window] = self.screentime_per_app.get(window, 0) + elapsed
             else:
-            # Only count as break time if not video playback
                 if not is_video_playback and self.idle_time >= 60:
                     if self.break_start_time is None:
                         logger.debug(f"total screen time: {self.get_formatted_screen_time(self.screen_time)}")
-                        logger.debug(f"user is idle")
+                        logger.debug("user is idle")
                         self.break_start_time = now
 
         self.last_check = now
+
+    def reset_daily_counters(self):
+        """Resets all daily counters at midnight."""
+        logger.info("⏳ New day detected — resetting daily counters")
+        self.screen_time = 0
+        self.total_break_duration = 0
+        self.total_stretch_time = 0
+        self.screentime_per_app.clear()
+        self.break_start_time = None
+
 
     def get_formatted_screen_time(self, arg):
         """
