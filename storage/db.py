@@ -7,7 +7,7 @@ from logs.db_logger import logger
 import atexit
 from contextlib import contextmanager
 
-DB_PATH = "storage/User_db"
+DB_PATH = r"C:\Dev\project_pymonitor\storage\User_db"
 TIMEOUT = 10          # Seconds to wait for a locked DB
 MAX_RETRIES = 5       # Retry attempts on lock
 RETRY_DELAY = 0.2     # Seconds between retries

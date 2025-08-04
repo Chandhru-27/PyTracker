@@ -1,6 +1,7 @@
 from state.userstate import UserActivityState
 from datetime import datetime , timedelta
 from utils.utilities import Utility
+from frontend_ui import interface
 from frontend_ui import tst
 from logs.app_logger import logger
 from trackers import trackers
@@ -66,4 +67,4 @@ if __name__ == "__main__":
     tracker_thread.start()
     reminder_thread.start()
   
-    tst.start_ui(state)
+    interface.start_ui(shared_state=state)
