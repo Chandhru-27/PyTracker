@@ -14,7 +14,7 @@ import os
 
 def thread_monitor():
     while True:
-        active_threads = threading.active_count()
+        active_threads = threading.active_coun40t()
         print("\n[THREAD MONITOR] Active threads:", active_threads)
         for t in threading.enumerate():
             print(f"  - Name: {t.name}, Daemon: {t.daemon}")
@@ -23,14 +23,16 @@ def thread_monitor():
 # -------------------------
 # Main Launcher
 # ------------------------- 
-
+ 
 if __name__ == "__main__":
+
     # Run as admin if not already
     # if not Utility.is_admin():
     #     ctypes.windll.shell32.ShellExecuteW(
     #         None, "runas", sys.executable, " ".join(sys.argv), None, 1
     #     )
     #     logger.debug("Running as admin")
+
 
     # Initialize the database and activity state
     user_db = db.Database()

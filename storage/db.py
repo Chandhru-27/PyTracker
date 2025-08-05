@@ -4,10 +4,11 @@ import sqlite3
 import time
 from storage import schema
 from logs.db_logger import logger
+from utils.utilities import Utility
 import atexit
 from contextlib import contextmanager
 
-DB_PATH = r"C:\Dev\project_pymonitor\storage\User_db"
+DB_PATH = r"C:\Dev\PyTracker\storage\User_db"
 TIMEOUT = 10          # Seconds to wait for a locked DB
 MAX_RETRIES = 5       # Retry attempts on lock
 RETRY_DELAY = 0.2     # Seconds between retries
@@ -15,6 +16,7 @@ RETRY_DELAY = 0.2     # Seconds between retries
 
 class Database:
     _wal_set = False  # Class-level flag so WAL mode is enabled only once
+    _tables_created = False
 
     def __init__(self):
         """Initialize database connection settings."""
@@ -23,9 +25,48 @@ class Database:
                 self._set_wal_mode_once()
                 Database._wal_set = True
                 logger.debug("SQLite ready (WAL mode, FK enabled).")
+
+            if not Database._tables_created:
+                self._ensure_tables_exist()
+                Database._tables_created = True
+
         except Exception as e:
             logger.exception(f"DB init failed: {e}")
 
+    def _ensure_tables_exist(self):
+        """Ensure all required tables exist, creating them if necessary."""
+        required_tables = {
+            'GENERAL_USAGE': schema.CREATE_TABLE_USER_STATS,
+            'APP_USAGE': schema.CREATE_TABLE_APPLICATION_USAGE,
+            'blocked_apps': schema.CREATE_TABLE_BLOCKED_APPS,
+            'blocked_urls': schema.CREATE_TABLE_BLOCKED_URLS
+        }
+        
+        for attempt in range(MAX_RETRIES):
+            try:
+                with self.get_connection() as (conn, cursor):
+                    # Check which tables exist
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                    existing_tables = {row[0] for row in cursor.fetchall()}
+                    
+                    # Create missing tables
+                    for table_name, create_sql in required_tables.items():
+                        if table_name not in existing_tables:
+                            logger.info(f"Creating missing table: {table_name}")
+                            cursor.execute(create_sql)
+                    
+                    conn.commit()
+                return
+                
+            except sqlite3.OperationalError as e:
+                if "locked" in str(e).lower():
+                    logger.debug(f"Table check locked, retry {attempt+1}/{MAX_RETRIES}")
+                    time.sleep(RETRY_DELAY)
+                else:
+                    raise
+                    
+        raise sqlite3.OperationalError("Failed to verify tables after retries.")
+    
     def _set_wal_mode_once(self):
         """Set WAL mode with retry to avoid lock issues."""
         for attempt in range(MAX_RETRIES):
@@ -191,6 +232,26 @@ class Database:
         result = self.fetch_one("SELECT id FROM GENERAL_USAGE WHERE date = ?", (date,))
         return result[0] if result else None
     
+    def get_user_history(self):
+        result = self.fetch_all("""
+            SELECT rnk, date, screen_time, break_time
+            FROM (
+                SELECT 
+                    ROW_NUMBER() OVER (ORDER BY date) AS rnk,
+                    date,
+                    screen_time,
+                    break_time
+                FROM GENERAL_USAGE
+            ) AS sub
+        """)
+        history = []
+        for data in result:
+            id = data[0]
+            date = data[1]
+            screen_time = Utility.get_formatted_screen_time(data[2])
+            break_time = Utility.get_formatted_screen_time(data[3])
+            history.append([id , date , screen_time , break_time])
+        return history
     
     def load_existing_general_usage(self, date):
         return self.fetch_one(

@@ -1,5 +1,6 @@
 from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
 from logs.app_logger import logger
+from datetime import timedelta
 import win32process
 import subprocess
 import pythoncom
@@ -33,6 +34,12 @@ class Utility:
         ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii))
         millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
         return millis / 1000.0
+    
+    def get_formatted_screen_time(arg):
+        """
+        Converts total screen time in seconds to HH:MM:SS format.
+        """
+        return str(timedelta(seconds=int(arg)))
 
     @staticmethod
     def get_active_window_title():

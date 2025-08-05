@@ -54,7 +54,7 @@ def reminder_logic(state: UserActivityState):
     Holds the mathematical logic of how breaktime is assumed and accounted.
     """
     if not shutdown_event.is_set():
-        reminder_threshold = 2 * 60  # 45 minutes
+        reminder_threshold = 45 * 60  # 45 minutes
         idle_threshold = 60  # seconds of inactivity to count as break
 
         def main_logic():

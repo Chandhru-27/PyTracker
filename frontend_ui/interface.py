@@ -7,6 +7,7 @@ import pystray
 import os
 import time
 import threading
+from storage.db import Database
 
 # ===============================
 # Global Variables
@@ -82,7 +83,7 @@ def on_closing(window):
 
 def show_tray_icon(window):
     global tray_icon
-    icon_image = Image.open(r"C:\Dev\project_pymonitor\frontend_ui\logo.png")
+    icon_image = Image.open(r"C:\Dev\PyTracker\frontend_ui\logo.png")
 
     def _on_show(icon, item):
         window.deiconify()
@@ -164,7 +165,7 @@ def start_ui(shared_state):
                     activeforeground="#178DED",
                     anchor="w",
                     command=command)
-        btn.pack(side="left", fill="x", expand=True, pady=20)
+        btn.pack(side="left", fill="x", expand=True, pady=5)
         
         # Store reference to icon
         btn.logo = icon_label
@@ -186,10 +187,6 @@ def start_ui(shared_state):
     content_frame.pack(side="right", fill="both", expand=True)
 
     # Variables for responsive widgets
-
-    def update_content_positions(screen_time, break_time):
-        """Update widget positions based on current values"""
-        pass  # Implement this if needed
 
     # Create widgets that need to be responsive
     def update_ui():
@@ -286,31 +283,118 @@ def start_ui(shared_state):
             widget.destroy()
         # Add restricted page content here
 
-    def history_page():
+    ROWS_PER_PAGE = 10
+    current_page_index = 0  # start at page 0
+
+    def history_page(page_index=0):
+        global current_page_index
+        current_page_index = page_index
         global current_page
         current_page = "history"
         for widget in content_frame.winfo_children():
             widget.destroy()
         
-        history = [
-            [1, '5h 12m', '18h 48m', 'VSCode: 3.84h'],
-            [2, '6h 48m', '17h 12m', 'YouTube: 4.2h'],
-            [3, '3h 30m', '20h 30m', 'Zoom: 1.89h'],
-            [4, '4h 6m', '19h 54m', 'Slack: 2.9h'],
-            [5, '8h 0m', '16h 0m', 'Netflix: 6.4h']
-        ]
-
-        y = 200
-        for x in history:
-            history_row = tk.Label(
-                content_frame,
-                text=f"{x[0]:<3}| {x[1]:<12}| {x[2]:<12}| {x[3]:<12}",
-                font=("Courier", 17),
-                anchor="w", bg="#222222",
-                fg="white"
+        # Title
+        title_label = ctk.CTkLabel(
+            master=content_frame,
+            text="Usage History",
+            font=("Agency FB", 30),
+            text_color="white"
+        )
+        title_label.pack(pady=(20, 10))
+        
+        # Create table frame
+        table_frame = ctk.CTkFrame(
+            master=content_frame,
+            fg_color="#2b2b2b",
+            border_width=1,
+            border_color="#444444"
+        )
+        table_frame.pack(pady=25, padx=20, fill="both", expand=True)
+        
+        # Table headers
+        headers = ["S.No", "Date", "Screen Time", "Break Time", "View App Usage"]
+        for col, header in enumerate(headers):
+            header_label = ctk.CTkLabel(
+                master=table_frame,
+                text=header,
+                font=("Segoe UI Semibold", 20),
+                text_color="#178DED",
+                anchor="center"
             )
-            history_row.place(x=250, y=y)
-            y += 40
+            header_label.grid(row=0, column=col, sticky="nsew", padx=5, pady=5)
+        
+        db = Database()
+        history_data = db.get_user_history()
+        
+        # Slice for this page
+        start_index = page_index * ROWS_PER_PAGE
+        end_index = start_index + ROWS_PER_PAGE
+        page_data = history_data[start_index:end_index]
+        
+        # Fill with placeholders if less than ROWS_PER_PAGE
+        while len(page_data) < ROWS_PER_PAGE:
+            page_data.append(["", "", "", ""])
+        
+        # Add rows
+        for row, data in enumerate(page_data, start=1):
+            for col, value in enumerate(data):
+                cell = ctk.CTkLabel(
+                    master=table_frame,
+                    text=value,
+                    font=("Segoe UI", 18),
+                    text_color="white" if value else "#2b2b2b",  # hide placeholder text
+                    fg_color="#333333" if row % 2 == 0 else "#2b2b2b",
+                    anchor="center",
+                    height=50  # FIXED height for every row
+                )
+                cell.grid(row=row, column=col, sticky="nsew", padx=0, pady=5)
+            
+            # View button only if valid data
+            if data[0] != "":
+                btn = ctk.CTkButton(
+                    master=table_frame,
+                    text="View Usage",
+                    font=("Segoe UI", 18),
+                    fg_color="#474747",
+                    hover_color="#0e5a9e",
+                    width=100,
+                    height=40,
+                    command=lambda r=start_index + row: print(f"Viewing usage for row {r}")
+                )
+                btn.grid(row=row, column=len(headers)-1, padx=0, pady=5, sticky="nsew")
+            else:
+                # Empty placeholder for button column
+                empty = ctk.CTkLabel(
+                    master=table_frame,
+                    text="",
+                    fg_color="#333333" if row % 2 == 0 else "#2b2b2b"
+                )
+                empty.grid(row=row, column=len(headers)-1, sticky="nsew", padx=0, pady=5)
+        
+        # Make columns expand evenly
+        for col in range(len(headers)):
+            table_frame.grid_columnconfigure(col, weight=1)
+        
+        # Pagination controls
+        pagination_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+        pagination_frame.pack(pady=(0, 10))
+        
+        total_pages = (len(history_data) + ROWS_PER_PAGE - 1) // ROWS_PER_PAGE
+        for i in range(total_pages):
+            btn_color = "#178DED" if i != page_index else "white"
+            page_btn = ctk.CTkButton(
+                master=pagination_frame,
+                text=str(i + 1),
+                font=("Segoe UI", 16),
+                fg_color="transparent",
+                hover_color="#0e5a9e",
+                text_color=btn_color,
+                width=30,
+                command=lambda i=i: history_page(i)
+            )
+            page_btn.pack(side="left", padx=5)
+
 
     def settings_page():
         global current_page
@@ -327,25 +411,25 @@ def start_ui(shared_state):
     window.bind('<Configure>', on_resize)
 
     # Navigation buttons
-    home_btn = create_nav_button(nav_frame, "Home", r"C:\Dev\project_pymonitor\frontend_ui\home.png", home_page)
+    home_btn = create_nav_button(nav_frame, "Home", r"C:\Dev\PyTracker\frontend_ui\home.png", home_page)
 
     # Separator
     separator1 = Frame(nav_frame, bg=separator_color, height=2)
     separator1.pack(fill="x", pady=5)
 
-    block_app_btn = create_nav_button(nav_frame, "Restricted", r"C:\Dev\project_pymonitor\frontend_ui\block.png", restricted_page)
+    block_app_btn = create_nav_button(nav_frame, "Restricted", r"C:\Dev\PyTracker\frontend_ui\block.png", restricted_page)
 
     # Separator
     separator2 = Frame(nav_frame, bg=separator_color, height=2)
     separator2.pack(fill="x", pady=5)
 
-    history_btn = create_nav_button(nav_frame, "History", r"C:\Dev\project_pymonitor\frontend_ui\history.png", history_page)
+    history_btn = create_nav_button(nav_frame, "History", r"C:\Dev\PyTracker\frontend_ui\history.png", history_page)
 
     # Separator
     separator3 = Frame(nav_frame, bg=separator_color, height=2)
     separator3.pack(fill="x", pady=5)
 
-    settings_btn = create_nav_button(nav_frame, "Settings", r"C:\Dev\project_pymonitor\frontend_ui\settings.png", settings_page)
+    settings_btn = create_nav_button(nav_frame, "Settings", r"C:\Dev\PyTracker\frontend_ui\settings.png", settings_page)
 
     # Bottom space to push buttons up
     bottom_spacer = Frame(left_frame, bg=blue_color, height=20)
@@ -356,15 +440,16 @@ def start_ui(shared_state):
     top_frame.pack(side="top", fill="x", pady=(20, 40))
 
     # App logo
-    logo_img = Image.open(r"C:\Dev\project_pymonitor\frontend_ui\logo.png").resize((120, 120))
+    logo_img = Image.open(r"C:\Dev\PyTracker\frontend_ui\logo.png").resize((120, 120))
     logo_photo = ImageTk.PhotoImage(logo_img)
     logo_label = Label(top_frame, image=logo_photo, bg=blue_color)
     logo_label.image = logo_photo
     logo_label.pack()
 
     # Initialize with home page
+    
     home_page()
-
+    
     window.protocol("WM_DELETE_WINDOW", lambda: on_closing(window))
     window.mainloop()
 
