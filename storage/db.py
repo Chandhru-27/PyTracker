@@ -250,7 +250,7 @@ class Database:
             date = data[1]
             screen_time = Utility.get_formatted_screen_time(data[2])
             break_time = Utility.get_formatted_screen_time(data[3])
-            history.append([id , date , screen_time , break_time])
+            history.append([id , date , screen_time , break_time]) 
         return history
     
     def load_existing_general_usage(self, date):
@@ -258,7 +258,7 @@ class Database:
             "SELECT screen_time, break_time FROM GENERAL_USAGE WHERE date = ?",
             (date,)
         )
-
+    
     def load_existing_appwise_usage(self, date):
         data = self.fetch_all(
             "SELECT app_name, usage_duration FROM APP_USAGE WHERE date = ?",

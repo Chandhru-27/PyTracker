@@ -6,13 +6,12 @@ def notify():
     app_id="PyTracker",  # App name shown in the toast
     title="PyTracker - Reminder ⚠️",
     msg="You’ve been active for 45 mins. Break for 5 mins.",
-    icon=r"C:\Dev\project_pymonitor\frontend_ui\logo.png"  # PNG works fine
+    icon=r"C:\Dev\PyTracker\frontend_ui\logo.png"  # PNG works fine
     )
     toast.set_audio(audio.Reminder, loop=False)
     toast.add_actions(label="OK", launch="")
     toast.show()
 
-import tkinter as tk
 
 def customnotify():
     root = tk.Tk()

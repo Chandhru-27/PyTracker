@@ -26,13 +26,12 @@ def thread_monitor():
  
 if __name__ == "__main__":
 
-    # Run as admin if not already
+    # # Run as admin if not already
     # if not Utility.is_admin():
     #     ctypes.windll.shell32.ShellExecuteW(
     #         None, "runas", sys.executable, " ".join(sys.argv), None, 1
     #     )
     #     logger.debug("Running as admin")
-
 
     # Initialize the database and activity state
     user_db = db.Database()
@@ -63,7 +62,6 @@ if __name__ == "__main__":
     # Start background threads for tracking and reminders
     tracker_thread = threading.Thread(target=trackers.activity_tracker, args=(state,), daemon=True)
     reminder_thread = threading.Thread(target=trackers.reminder_logic, args=(state,), daemon=True)
-
 
     # Start the threads
     tracker_thread.start()

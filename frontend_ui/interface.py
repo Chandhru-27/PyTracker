@@ -1,5 +1,6 @@
 from tkinter import *
 import tkinter as tk
+from tkinter import filedialog
 import customtkinter as ctk
 from PIL import Image, ImageTk
 from tkinter import Frame, BOTH, LEFT, RIGHT, Y
@@ -8,11 +9,15 @@ import os
 import time
 import threading
 from storage.db import Database
+from state.userstate import UserActivityState
+from utils.utilities import Utility
+
+HOST_PATH = r"C:\Windows\System32\drivers\etc\hosts"
 
 # ===============================
 # Global Variables
 # ===============================
-state = None
+state = UserActivityState
 window = None
 tray_icon = None
 content_widgets = {}
@@ -23,7 +28,7 @@ screen_time_value = 12
 screen_time_mins = 0
 screen_time_hours = 0
 screen_perc = 0
-
+user_db = Database()
 # ===============================
 # Graceful Shutdown
 # ===============================
@@ -44,7 +49,6 @@ def graceful_shutdown():
     try:
         if state:
             from storage.db import Database  # avoid circular import
-            user_db = Database()
 
             with state.lock:
                 today = time.strftime("%Y-%m-%d")
@@ -122,8 +126,10 @@ def start_ui(shared_state):
     hover_color = "#36393B"
     separator_color = "#66696D"
 
+    sidebar_width = 180  # default
+
     # Creating the left frame
-    left_frame = ctk.CTkFrame(master=window, width=210, fg_color=blue_color)
+    left_frame = ctk.CTkFrame(master=window, width=sidebar_width, fg_color=blue_color)    
     left_frame.pack(side="left", fill="y")
     left_frame.pack_propagate(False)  # Prevent frame from shrinking
 
@@ -140,43 +146,38 @@ def start_ui(shared_state):
 
     # Function to create sidebar buttons with icons
     def create_nav_button(parent, text, icon_path, command=None):
-        # Button container
         btn_frame = Frame(parent, bg=blue_color)
         btn_frame.pack(fill="x", pady=0)
-        
-        # Load and resize icon
-        icon_img = Image.open(icon_path).resize((30, 30))
+
+        icon_img = Image.open(icon_path).resize((22, 22))  # smaller icon
         icon_photo = ImageTk.PhotoImage(icon_img)
-        
-        # Icon label
-        icon_label = Label(btn_frame, image=icon_photo, bg=blue_color, height=97)
-        icon_label.image = icon_photo  # Keep reference
-        icon_label.pack(side="left", padx=0, pady=20)
-        
-        # Button
-        btn = Button(btn_frame, 
-                    text=f"  {text}", 
-                    font=("Agency FB", 18), 
-                    bg=blue_color, 
+
+        icon_label = Label(btn_frame, image=icon_photo, bg=blue_color, height=55)
+        icon_label.image = icon_photo
+        icon_label.pack(side="left", padx=8, pady=10)
+
+        btn = Button(btn_frame,
+                    text=f"  {text}",
+                    font=("Segoe UI", 14),  # smaller font
+                    bg=blue_color,
                     fg="white",
                     bd=0,
-                    height=3,
+                    height=2,
                     activebackground=hover_color,
                     activeforeground="#178DED",
                     anchor="w",
                     command=command)
         btn.pack(side="left", fill="x", expand=True, pady=5)
-        
-        # Store reference to icon
+
         btn.logo = icon_label
+
+        # Hover events (unchanged)
         
-        # Bind hover events
-        btn.bind("<Enter>", lambda e: [on_enter(e), icon_label.config(bg=hover_color)])
         btn.bind("<Leave>", lambda e: [on_leave(e), icon_label.config(bg=blue_color)])
-        icon_label.bind("<Enter>", lambda e: [on_enter(e), btn.config(bg=hover_color)])
         icon_label.bind("<Leave>", lambda e: [on_leave(e), btn.config(bg=blue_color)])
-        
+
         return btn_frame
+
 
     # Navigation buttons container
     nav_frame = Frame(left_frame, bg=blue_color)
@@ -275,13 +276,6 @@ def start_ui(shared_state):
         current_page = "home"
         create_responsive_widgets()
         update_ui()
-
-    def restricted_page():
-        global current_page
-        current_page = "restricted"
-        for widget in content_frame.winfo_children():
-            widget.destroy()
-        # Add restricted page content here
 
     ROWS_PER_PAGE = 10
     current_page_index = 0  # start at page 0
@@ -395,6 +389,201 @@ def start_ui(shared_state):
             )
             page_btn.pack(side="left", padx=5)
 
+    def restricted_page():
+        global current_page
+        current_page = "restricted"
+
+        # Dummy Data (Replace with actual database fetch logic)
+        blocked_apps = user_db.load_blocked_apps()
+        blocked_urls = user_db.load_blocked_urls()
+
+        # Section containers
+        app_section_frame = None
+        url_section_frame = None
+
+        def render_app_table():
+            for widget in app_section_frame.winfo_children():
+                widget.destroy()
+            create_blocked_table(app_section_frame, "Blocked Apps", blocked_apps, render_app_table, is_app=True)
+
+        def render_url_table():
+            for widget in url_section_frame.winfo_children():
+                widget.destroy()
+            create_blocked_table(url_section_frame, "Blocked URLs", blocked_urls, render_url_table, is_app=False)
+
+        def render_page():
+            for widget in content_frame.winfo_children():
+                widget.destroy()
+
+            nonlocal app_section_frame, url_section_frame
+
+            app_section_frame = Frame(content_frame, bg="#222222")
+            app_section_frame.pack(fill="x", padx=10, pady=(10, 5))
+
+            url_section_frame = Frame(content_frame, bg="#222222")
+            url_section_frame.pack(fill="x", padx=10, pady=(10, 5))
+
+            render_app_table()
+            render_url_table()
+
+        def create_blocked_table(master, title, data_list, refresh_callback, is_app=True):
+        # Title
+            section_title = ctk.CTkLabel(
+                master=master,
+                text=title,
+                font=("Agency FB", 25),
+                text_color="white"
+            )
+            section_title.pack(pady=(10, 5))
+
+            # Scrollable Frame
+            scroll_container = ctk.CTkFrame(master, fg_color="#2b2b2b", border_width=1, border_color="#444444")
+            scroll_container.pack(padx=20, pady=10, fill="both", expand=False)
+
+            canvas = tk.Canvas(scroll_container, bg="#2b2b2b", highlightthickness=0)
+            scrollbar = tk.Scrollbar(scroll_container, orient="vertical", command=canvas.yview)
+            scrollable_frame = Frame(canvas, bg="#2b2b2b")
+
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+
+            # Table Headers
+            headers = ["S.No", "App Name" if is_app else "Domain"]
+            for col, header in enumerate(headers):
+                header_label = ctk.CTkLabel(
+                    master=scrollable_frame,
+                    text=header,
+                    font=("Segoe UI Semibold", 18),
+                    text_color="#178DED",
+                    width=25,
+                    anchor="center"
+                )
+                header_label.grid(row=0, column=col, padx=10, pady=10, sticky="w")
+
+            # Add '+' button at the end of header row
+            
+            def on_add_click():
+                if is_app:
+                    file_path = filedialog.askopenfilename(
+                        title="Select an application",
+                        filetypes=[("Executable Files", "*.exe")]
+                    )
+                    if file_path:
+                        exe_name = os.path.basename(file_path)
+                        if exe_name not in data_list:
+                            user_db.insert_blocked_app(app_name=exe_name)
+                            state.blocked_apps = user_db.load_blocked_apps()
+                            # Debug
+                            if state.blocked_apps:
+                                Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
+                            print(state.blocked_apps)
+                            data_list.add(exe_name)
+                            refresh_callback()
+                else:
+                    # For URLs — open an input dialog
+                    def submit_url():
+                        url = url_entry.get().strip()
+                        if url and url not in data_list:
+                            user_db.insert_blocked_url(url=url)
+                            Utility.block_url(HOST_PATH , data_list)
+                            data_list.add(url)
+                            input_window.destroy()
+                            refresh_callback()
+
+                    input_window = tk.Toplevel()
+                    input_window.title("Add URL")
+                    input_window.configure(bg="#2b2b2b")
+                    input_window.geometry("300x120")
+                    input_window.resizable(False, False)
+
+                    label = tk.Label(input_window, text="Enter URL:", font=("Segoe UI", 12), bg="#2b2b2b", fg="white")
+                    label.pack(pady=(15, 5))
+
+                    url_entry = tk.Entry(input_window, font=("Segoe UI", 12), width=35)
+                    url_entry.pack(pady=(0, 10))
+                    url_entry.focus()
+
+                    submit_btn = tk.Button(input_window, text="Add", font=("Segoe UI", 10), command=submit_url)
+                    submit_btn.pack()
+
+                    input_window.grab_set()  # Makes the popup modal
+
+            add_button = ctk.CTkButton(
+                master=scrollable_frame,
+                text="+",
+                font=("Segoe UI", 20, "bold"),
+                fg_color="#0e5a9e",
+                hover_color="#1077ce",
+                width=40,
+                height=35,
+                command=on_add_click
+            )
+            add_button.grid(row=0, column=len(headers), padx=10, pady=5, sticky="e")
+
+            # Rows
+            for idx, value in enumerate(data_list.copy(), start=1):
+                bg_color = "#333333" if idx % 2 == 0 else "#2b2b2b"
+
+                sno_label = ctk.CTkLabel(
+                    master=scrollable_frame,
+                    text=str(idx),
+                    font=("Segoe UI", 16),
+                    text_color="white",
+                    fg_color=bg_color,
+                    width=50,
+                    anchor="center"
+                )
+                sno_label.grid(row=idx, column=0, padx=10, pady=8, sticky="w")
+
+                item_frame = Frame(scrollable_frame, bg=bg_color)
+                item_frame.grid(row=idx, column=1, sticky="w", padx=10, pady=5)
+
+                item_label = Label(
+                    item_frame,
+                    text=value,
+                    font=("Segoe UI", 15),
+                    bg=bg_color,
+                    fg="white"
+                )
+                item_label.pack(side="left", padx=(0, 15))
+
+                def unblock_and_refresh(val=value):
+                    print(f"Unblocked: {val}")
+                    if is_app:
+                        user_db.remove_from_blocked_apps(app_name=val)
+                        state.blocked_apps = user_db.load_blocked_apps()
+                        print(state.blocked_apps)
+                        if state.blocked_apps:
+                            Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
+                    else:
+                        Utility.clean_hosts_file(HOST_PATH , val)
+                        Utility.restart_dns_service()
+                        Utility.flush_dns()
+                        user_db.remove_from_blocked_url(url=val)
+                    data_list.remove(val)
+                    refresh_callback()  # Only refresh this section
+
+                unblock_btn = ctk.CTkButton(
+                    master=item_frame,
+                    text="Unblock",
+                    font=("Segoe UI", 14),
+                    fg_color="#474747",
+                    hover_color="#0e5a9e",
+                    width=80,
+                    height=30,
+                    command=unblock_and_refresh
+                )
+                unblock_btn.pack(side="left")
+
+        render_page()
 
     def settings_page():
         global current_page
@@ -403,10 +592,29 @@ def start_ui(shared_state):
             widget.destroy()
         # Add settings page content here
 
-    # Make the window responsive
+    last_size = [None, None]  # [width, height]
+
     def on_resize(event):
-        if event.widget == window and current_page == "home":
-            create_responsive_widgets()
+        if event.widget == window:
+            width = window.winfo_width()
+            height = window.winfo_height()
+
+            # Only trigger resize logic when size changes
+            if (width, height) != tuple(last_size):
+                last_size[0], last_size[1] = width, height
+
+                # Adjust sidebar width
+                new_sidebar_width = 160 if width < 1100 else 180
+                left_frame.configure(width=new_sidebar_width)
+
+                # Resize logo
+                new_logo_size = 70 if width < 1100 else 90
+                update_logo(new_logo_size)
+
+                # Regenerate home widgets if visible
+                if current_page == "home":
+                    create_responsive_widgets()
+
 
     window.bind('<Configure>', on_resize)
 
@@ -429,15 +637,27 @@ def start_ui(shared_state):
     separator3 = Frame(nav_frame, bg=separator_color, height=2)
     separator3.pack(fill="x", pady=5)
 
-    settings_btn = create_nav_button(nav_frame, "Settings", r"C:\Dev\PyTracker\frontend_ui\settings.png", settings_page)
+    # settings_btn = create_nav_button(nav_frame, "Settings", r"C:\Dev\PyTracker\frontend_ui\settings.png", settings_page)
 
-    # Bottom space to push buttons up
-    bottom_spacer = Frame(left_frame, bg=blue_color, height=20)
-    bottom_spacer.pack(side="bottom", fill="x")
+    # # Bottom space to push buttons up
+    # bottom_spacer = Frame(left_frame, bg=blue_color, height=20)
+    # bottom_spacer.pack(side="bottom", fill="x")
+
+    # Dynamic Logo Resize
+    def update_logo(size=90):
+        for widget in top_frame.winfo_children():
+            widget.destroy()
+
+        logo_img = Image.open(r"C:\Dev\PyTracker\frontend_ui\logo.png").resize((size, size))
+        logo_photo = ImageTk.PhotoImage(logo_img)
+        logo_label = Label(top_frame, image=logo_photo, bg=blue_color)
+        logo_label.image = logo_photo
+        logo_label.pack()
 
     # Top section for logo
     top_frame = Frame(left_frame, bg=blue_color)
-    top_frame.pack(side="top", fill="x", pady=(20, 40))
+    top_frame.pack(side="top", fill="x", pady=(20, 20))
+    update_logo()
 
     # App logo
     logo_img = Image.open(r"C:\Dev\PyTracker\frontend_ui\logo.png").resize((120, 120))

@@ -7,6 +7,7 @@ import pythoncom
 import threading
 import win32gui
 import psutil
+import winreg
 import ctypes
 import winreg
 import time
@@ -17,6 +18,7 @@ import os
 # Utility Functions
 # -------------------------
 shutdown_event = threading.Event()
+
 
 class Utility:
     audio_lock = threading.Lock()
@@ -53,6 +55,30 @@ class Utility:
             return process_obj.name()
         except Exception:
             return 'Unknow'
+
+    @staticmethod
+    def get_installed_apps():
+        apps = set()
+        reg_paths = [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+        ]
+
+        for reg_path in reg_paths:
+            try:
+                reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
+                for i in range(0, winreg.QueryInfoKey(reg_key)[0]):
+                    sub_key_name = winreg.EnumKey(reg_key, i)
+                    sub_key = winreg.OpenKey(reg_key, sub_key_name)
+                    try:
+                        app_name, _ = winreg.QueryValueEx(sub_key, "DisplayName")
+                        apps.add(app_name)
+                    except FileNotFoundError:
+                        continue
+            except Exception:
+                continue
+
+        return sorted(apps)
 
     @staticmethod
     def get_active_audio_status():
@@ -197,29 +223,30 @@ class Utility:
         logger.debug(f"App blocker started for: {', '.join(blocked_apps)}")
 
     @staticmethod
-    def block_url(HOST_PATH, BLOCKED_DOMAINS):
+    def block_url(HOST_PATH , BLOCKED_DOMAINS):
         try:
             with open(HOST_PATH , 'r+') as file:
                 file_data = file.read()
                 for website in BLOCKED_DOMAINS:
                     if website not in file_data:
                         file.write(f"128.0.0.1 {website}\n")
+                        logger.debug(f"Written to host file and blocked {website}")
         except Exception as e:
-            print("Error opening file/Blocking website")
+            logger.debug("Error opening host file and Blocking website")
         
     @staticmethod
-    def clean_hosts_file(HOST_PATH: str, BLOCKED_DOMAINS: set):
+    def clean_hosts_file(HOST_PATH: str, BLOCKED_DOMAIN: str):
         try:
             with open(HOST_PATH, 'r') as file:
                 lines = file.readlines()
 
-            # Filter lines that do NOT contain any blocked domain
-            new_lines = [line for line in lines if not any(domain in line for domain in BLOCKED_DOMAINS)]
+            # Filter lines that do NOT contain the blocked domain
+            new_lines = [line for line in lines if BLOCKED_DOMAIN not in line]
 
             with open(HOST_PATH, 'w') as file:
                 file.writelines(new_lines)
 
-            logger.debug("[+] Hosts file cleaned.")
+            logger.debug(f"[+] '{BLOCKED_DOMAIN}' removed from hosts file.")
         except PermissionError:
             logger.debug("[-] Permission denied: Run this script as administrator.")
             exit(1)
