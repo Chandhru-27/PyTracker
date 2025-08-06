@@ -18,7 +18,7 @@ import os
 # Utility Functions
 # -------------------------
 shutdown_event = threading.Event()
-
+app_blocker_threads = []
 
 class Utility:
     audio_lock = threading.Lock()
@@ -210,27 +210,48 @@ class Utility:
             pythoncom.CoUninitialize()
 
     @staticmethod
-    def start_app_blocker(blocked_apps: set, scan_interval: int = 5):
+    def start_app_blocker(blocked_apps: set, scan_interval: int = 5 ):
         """Starts both background scanning and event watching."""
+        global app_blocker_threads
         if not blocked_apps:
             return  # Nothing to block
+        
 
+        shutdown_event.clear()
         t1 = threading.Thread(target=Utility.background_scanner, args=(blocked_apps, scan_interval), daemon=True)
         t2 = threading.Thread(target=Utility.wmi_event_watcher, args=(blocked_apps,), daemon=True)
+
         t1.start()
         t2.start()
 
+
+        app_blocker_threads = [t1 , t2]
         logger.debug(f"App blocker started for: {', '.join(blocked_apps)}")
 
     @staticmethod
-    def block_url(HOST_PATH , BLOCKED_DOMAINS):
+    def stop_app_blocker():
+        """Stop and reset blocked apps"""
+        global app_blocker_threads
+        if not app_blocker_threads:
+            return
+        
+        shutdown_event.set()
+
+        for thread in app_blocker_threads:
+            if thread.is_alive():
+                thread.join()
+        
+        app_blocker_threads = []
+        logger.debug("App blocker threads stopped.")     
+
+    @staticmethod
+    def block_url(HOST_PATH , website):
         try:
             with open(HOST_PATH , 'r+') as file:
                 file_data = file.read()
-                for website in BLOCKED_DOMAINS:
-                    if website not in file_data:
-                        file.write(f"128.0.0.1 {website}\n")
-                        logger.debug(f"Written to host file and blocked {website}")
+                if website not in file_data:
+                    file.write(f"128.0.0.1 {website}\n")
+                    logger.debug(f"Written to host file and blocked {website}")
         except Exception as e:
             logger.debug("Error opening host file and Blocking website")
         

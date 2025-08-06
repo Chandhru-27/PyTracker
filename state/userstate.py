@@ -25,7 +25,7 @@ class UserActivityState:
         self.last_date = self.last_check.date()  # Track date for rollover
         self.lock = threading.Lock()
         self.screentime_per_app = {}
-        self.blocked_apps = {}
+        self.blocked_apps = set()
         self.blocked_urls = set()
 
     def update(self):

@@ -1,20 +1,20 @@
-import sys
-import os
+# import sys
+# import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-import sqlite3
-from utils.utilities import Utility
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# import sqlite3
+# from utils.utilities import Utility
 
-conn = sqlite3.connect(r"C:\Dev\PyTracker\storage\User_db")
-cursor = conn.cursor()
-cursor.execute("SELECT app_name FROM blocked_apps")
+# conn = sqlite3.connect(r"C:\Dev\PyTracker\storage\User_db")
+# cursor = conn.cursor()
+# cursor.execute("SELECT app_name FROM blocked_apps")
 
-result = cursor.fetchall()
-history = []
-for row in result:
-    history.append(row[0])
+# result = cursor.fetchall()
+# history = []
+# for row in result:
+#     history.append(row[0])
 
-print(history)
+# print(history)
 # import winreg
 
 # def get_installed_apps():

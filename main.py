@@ -26,12 +26,12 @@ def thread_monitor():
  
 if __name__ == "__main__":
 
-    # # Run as admin if not already
-    # if not Utility.is_admin():
-    #     ctypes.windll.shell32.ShellExecuteW(
-    #         None, "runas", sys.executable, " ".join(sys.argv), None, 1
-    #     )
-    #     logger.debug("Running as admin")
+    # Run as admin if not already
+    if not Utility.is_admin():
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, " ".join(sys.argv), None, 1
+        )
+        logger.debug("Running as admin")
 
     # Initialize the database and activity state
     user_db = db.Database()

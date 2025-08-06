@@ -11,6 +11,8 @@ import threading
 from storage.db import Database
 from state.userstate import UserActivityState
 from utils.utilities import Utility
+from logs.app_logger import logger
+
 
 HOST_PATH = r"C:\Windows\System32\drivers\etc\hosts"
 
@@ -479,12 +481,11 @@ def start_ui(shared_state):
                     if file_path:
                         exe_name = os.path.basename(file_path)
                         if exe_name not in data_list:
+                            Utility.stop_app_blocker()
                             user_db.insert_blocked_app(app_name=exe_name)
                             state.blocked_apps = user_db.load_blocked_apps()
-                            # Debug
                             if state.blocked_apps:
                                 Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
-                            print(state.blocked_apps)
                             data_list.add(exe_name)
                             refresh_callback()
                 else:
@@ -492,12 +493,11 @@ def start_ui(shared_state):
                     def submit_url():
                         url = url_entry.get().strip()
                         if url and url not in data_list:
+                            Utility.block_url(HOST_PATH , url)
                             user_db.insert_blocked_url(url=url)
-                            Utility.block_url(HOST_PATH , data_list)
                             data_list.add(url)
                             input_window.destroy()
                             refresh_callback()
-
                     input_window = tk.Toplevel()
                     input_window.title("Add URL")
                     input_window.configure(bg="#2b2b2b")
@@ -558,10 +558,12 @@ def start_ui(shared_state):
                 def unblock_and_refresh(val=value):
                     print(f"Unblocked: {val}")
                     if is_app:
+                        Utility.stop_app_blocker()
                         user_db.remove_from_blocked_apps(app_name=val)
                         state.blocked_apps = user_db.load_blocked_apps()
-                        print(state.blocked_apps)
                         if state.blocked_apps:
+                            logger.debug(f"Loaded blocked apps data again!.")
+                            logger.debug(f"Blocked apps: {state.blocked_apps}")
                             Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
                     else:
                         Utility.clean_hosts_file(HOST_PATH , val)
