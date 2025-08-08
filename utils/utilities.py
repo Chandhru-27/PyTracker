@@ -1,6 +1,6 @@
 from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
 from logs.app_logger import logger
-from datetime import timedelta
+from datetime import datetime , timedelta
 import win32process
 import subprocess
 import pythoncom
@@ -372,3 +372,80 @@ class Utility:
                 if shutdown_event.is_set():
                     return  # Avoid retry during shutdown
                 time.sleep(min(5, interval))  # Backoff before retry
+
+    @staticmethod
+    def run_precise_timer(interval: float, func: callable, *args, **kwargs):
+        """
+        High-precision timer for break time tracking.
+        Detects sleep/resume gaps and passes them to the callback.
+        """
+        next_time = time.time()
+        last_real_time = datetime.now()  # wall-clock tracking
+
+        while not shutdown_event.is_set():
+            try:
+                now_real = datetime.now()
+                gap_seconds = (now_real - last_real_time).total_seconds()
+                last_real_time = now_real
+
+                # Pass the detected gap to the callback
+                func(*args, gap_seconds=gap_seconds, **kwargs)
+
+                next_time += interval
+                sleep_time = next_time - time.time()
+
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                else:
+                    # If behind schedule, reset
+                    next_time = time.time()
+
+            except Exception as e:
+                logger.error(f"Precise timer crashed: {e}", exc_info=True)
+                if shutdown_event.is_set():
+                    return
+                time.sleep(1)  # Short backoff
+
+
+    @staticmethod
+    def run_adaptive_timer(base_interval: float, func: callable, *args, **kwargs):
+        """
+        CPU-efficient adaptive timer for break time tracking:
+        - Adaptive intervals based on user activity
+        - Shorter intervals when active, longer when idle
+        - Minimal CPU usage during idle periods
+        - Maintains precision for break detection
+        """
+        next_time = time.time()
+        current_interval = base_interval
+        
+        while not shutdown_event.is_set():
+            try:
+                # Execute the target function
+                func(*args, **kwargs)
+                
+                # Adaptive interval based on idle time
+                idle_time = Utility.get_idle_time()
+                if idle_time > 120:  # 2+ minutes idle
+                    current_interval = min(5.0, base_interval * 3)  # Longer intervals when very idle
+                elif idle_time > 60:  # 1+ minutes idle
+                    current_interval = min(3.0, base_interval * 2)  # Medium intervals when idle
+                else:
+                    current_interval = base_interval  # Normal intervals when active
+                
+                # Simple, precise timing
+                next_time += current_interval
+                sleep_time = next_time - time.time()
+
+                # Minimal sleep handling
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                else:
+                    # If behind schedule, reset to current time
+                    next_time = time.time()
+
+            except Exception as e:
+                logger.error(f"Adaptive timer crashed: {e}", exc_info=True)
+                if shutdown_event.is_set():
+                    return
+                time.sleep(1)  # Short backoff
