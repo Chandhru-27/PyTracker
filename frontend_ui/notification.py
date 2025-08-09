@@ -1,27 +1,25 @@
 from customtkinter.windows.widgets.scaling import scaling_tracker
 from winotify import Notification, audio
-import tkinter as tk
 import customtkinter as ctk
-import threading
+import tkinter as tk
 
 def notify():
+    """Shows a native Windows toast reminder notification."""
     toast = Notification(
-    app_id="PyTracker",  # App name shown in the toast
-    title="PyTracker - Reminder ⚠️",
-    msg="You've been active for 45 mins. Break for 5 mins.",
-    icon=r"C:\Dev\PyTracker\frontend_ui\logo.png"  # PNG works fine
+        app_id="PyTracker",
+        title="PyTracker - Reminder ⚠️",
+        msg="You've been active for 45 mins. Break for 5 mins.",
+        icon=r"C:\Dev\PyTracker\frontend_ui\logo.png"
     )
     toast.set_audio(audio.Reminder, loop=False)
     toast.add_actions(label="OK", launch="")
     toast.show()
 
 def customnotify():
-    """
-    Custom notification to show if the user has turned off windows notifications or in focus/dnd mode.
-    """
+    """Display an in-app modal reminder when system notifications are unavailable."""
     root = tk.Tk()
     root.title("Reminder - PyTracker")
-    root.configure(bg="#181f2a")  # Match your app background
+    root.configure(bg="#181f2a")  
     root.resizable(False, False)
 
     window_width, window_height = 500, 150
@@ -33,7 +31,6 @@ def customnotify():
     y = (screen_height // 2) - (window_height // 2)
     root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
-    # Rounded border look using padding frame
     card = tk.Frame(root, bg="#232b3b", bd=0, relief="flat")
     card.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.92, relheight=0.85)
 
@@ -64,7 +61,6 @@ def customnotify():
     )
     close_btn.pack(pady=(5, 10))
 
-    # Hover effect
     def on_enter(e): close_btn.config(bg="#00bfae")
     def on_leave(e): close_btn.config(bg="#2979ff")
     close_btn.bind("<Enter>", on_enter)
@@ -73,27 +69,19 @@ def customnotify():
     root.mainloop()
 
 def show_reset_warning(callback_on_proceed):
-    """
-    Shows a warning dialog for reset functionality with Proceed and Return buttons.
-    
-    Args:
-        callback_on_proceed: Function to call when user clicks "Proceed"
-    """
-    # Create the warning dialog
+    """Display a centered modal to confirm reset, invoking a callback on proceed."""
     warning_dialog = ctk.CTkToplevel()
     warning_dialog.title("Reset Warning")
     warning_dialog.geometry("450x200")
     warning_dialog.configure(fg_color="#181f2a")
     warning_dialog.resizable(False, False)
-    warning_dialog.grab_set()  # Make it modal
+    warning_dialog.grab_set()  
     
-    # Center the dialog
     warning_dialog.update_idletasks()
     x = (warning_dialog.winfo_screenwidth() // 2) - (450 // 2)
     y = (warning_dialog.winfo_screenheight() // 2) - (200 // 2)
     warning_dialog.geometry(f"450x200+{x}+{y}")
     
-    # Warning icon and title
     title_frame = ctk.CTkFrame(warning_dialog, fg_color="transparent")
     title_frame.pack(fill="x", padx=20, pady=(20, 10))
     
@@ -103,7 +91,6 @@ def show_reset_warning(callback_on_proceed):
     title_label = ctk.CTkLabel(title_frame, text="Reset Timer", font=("Segoe UI", 20, "bold"), text_color="#ffffff")
     title_label.pack(side="left")
     
-    # Warning message
     message_label = ctk.CTkLabel(
         warning_dialog, 
         text="Are you sure you want to reset the timer?\nThis will clear all current tracking data for today.",
@@ -114,7 +101,6 @@ def show_reset_warning(callback_on_proceed):
     )
     message_label.pack(pady=10)
     
-    # Button frame
     button_frame = ctk.CTkFrame(warning_dialog, fg_color="transparent")
     button_frame.pack(fill="x", padx=20, pady=(20, 0))
     
@@ -124,8 +110,7 @@ def show_reset_warning(callback_on_proceed):
     
     def on_return():
         warning_dialog.destroy()
-    
-    # Return button (left)
+ 
     return_btn = ctk.CTkButton(
         button_frame,
         text="Return",
@@ -140,7 +125,6 @@ def show_reset_warning(callback_on_proceed):
     )
     return_btn.pack(side="left", padx=(0, 10))
     
-    # Proceed button (right)
     proceed_btn = ctk.CTkButton(
         button_frame,
         text="Proceed",
@@ -154,13 +138,12 @@ def show_reset_warning(callback_on_proceed):
         command=on_proceed
     )
     proceed_btn.pack(side="right", padx=(10, 0))
-    
-    # Focus on the dialog
+   
     warning_dialog.focus_set()
     warning_dialog.wait_window()
 
 
-""" Crashing function, needs to be fixed
+""" Crashing function, needs fix
 
 def customnotify():
     root = ctk.CTkToplevel()

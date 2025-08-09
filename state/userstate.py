@@ -1,19 +1,14 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from datetime import datetime , timedelta
+from datetime import datetime, timedelta
 from utils.utilities import Utility
 from logs.app_logger import logger
 from utils import keywords
 import threading
-# -------------------------------
-# Shared State - Class Definition
-# -------------------------------
 
 class UserActivityState:
-    """
-    Class handles the state of the user and other in-memory variables to process.
-    """
+    """Mutable in-memory state for tracking user activity, app usage, and timers."""
     def __init__(self):
         self.idle_time = 0
         self.active_window = ""
@@ -23,7 +18,7 @@ class UserActivityState:
         self.total_stretch_time = 0
         self.is_active_audio = False
         self.last_check = datetime.now()
-        self.last_date = self.last_check.date()  # Track date for rollover
+        self.last_date = self.last_check.date()  
         self.lock = threading.Lock()
         self.screentime_per_app = {}
         self.blocked_apps = set()
@@ -31,14 +26,11 @@ class UserActivityState:
         self.is_paused = False
 
     def update(self):
-        """
-        Calculates the screentime based on the idle time. runs every 2 seconds from the activity thread.
-        """
+        """Update activity metrics based on idle time, active window, and audio status."""
         with self.lock:
             now = datetime.now()
             today = now.date()
 
-            # Detect midnight rollover
             if today != self.last_date:
                 self.reset_daily_counters()
                 self.last_date = today
@@ -72,9 +64,7 @@ class UserActivityState:
         self.last_check = now
 
     def reset_daily_counters(self):
-        """
-        Resets all daily counters at midnight.
-        """
+        """Reset daily counters when a new day is detected."""
         logger.info("New day detected — resetting daily counters")
         self.screen_time = 0
         self.total_break_duration = 0
@@ -84,15 +74,11 @@ class UserActivityState:
 
 
     def get_formatted_screen_time(self, arg):
-        """
-        Converts total screen time in seconds to HH:MM:SS format.
-        """
+        """Convert duration in seconds to HH:MM:SS string."""
         return str(timedelta(seconds=int(arg)))
 
-    def load_existing_data(self, screen_time, break_time, app_usage , blocked_apps , blocked_urls):
-        """
-        Loads previously stored session data to continue tracking.
-        """
+    def load_existing_data(self, screen_time, break_time, app_usage, blocked_apps, blocked_urls):
+        """Load persisted session metrics and lists into the current state."""
         self.screen_time = screen_time
         self.total_break_duration = break_time
         self.screentime_per_app.update(app_usage)

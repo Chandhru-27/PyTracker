@@ -1,19 +1,17 @@
-import customtkinter as ctk
-from PIL import Image
-from tkinter import filedialog
-import tkinter.messagebox as messagebox
-from datetime import datetime , timedelta
-from state.userstate import UserActivityState
 from frontend_ui.notification import show_reset_warning
-import random
-import os
-import threading
-import time
-from storage.db import Database
-import pystray
+from state.userstate import UserActivityState
 from pystray import MenuItem as item
 from utils.utilities import Utility
 from logs.app_logger import logger
+from storage.db import Database
+from tkinter import filedialog
+from datetime import datetime 
+import customtkinter as ctk
+from PIL import Image
+import threading
+import pystray
+import time
+import os
 
 shutdown_event = threading.Event()
 tray_icon = None
@@ -30,7 +28,7 @@ class TimeTrackerApp(ctk.CTk):
             "Warning: Make sure to close all the browsers to block an url. Enter a domain only (e.g., xyz.com or www.xyz.com)."
         )
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self.title("TimeTracker Pro")
+        self.title("PyTracker")
         self.geometry("1200x720")
         self.minsize(900, 700)
         ctk.set_appearance_mode("dark")
@@ -197,7 +195,7 @@ class TimeTrackerApp(ctk.CTk):
             item("Exit", _on_exit)
         )
 
-        tray_icon = pystray.Icon("TimeTracker", icon_image, "TimeTracker", menu)
+        tray_icon = pystray.Icon("PyTracker", icon_image, "PyTracker", menu)
         threading.Thread(target=tray_icon.run, daemon=True).start()
 
     def on_closing(self):
@@ -345,6 +343,7 @@ class TimeTrackerApp(ctk.CTk):
             width=80
         )
         self.tracking_status_label.pack(pady=5, padx=15, anchor="e")
+
         def update_tracking_status_label():
             if self.is_tracking:
                 self.tracking_status_label.configure(text="On Track", fg_color="#00c853", text_color="#ffffff")
@@ -461,7 +460,6 @@ class TimeTrackerApp(ctk.CTk):
                 cell = ctk.CTkLabel(history_frame, text=val, font=("Segoe UI", 16), text_color="#ffffff", fg_color=row_bg)
                 cell.grid(row=i, column=j, padx=10, pady=8, sticky="nsew")
 
-            # Row format from DB: [Sno, Date, Screen Time, Break Time]
             date_value = row[1] if len(row) > 1 else None
             view_btn = ctk.CTkButton(
                 history_frame,
@@ -494,13 +492,10 @@ class TimeTrackerApp(ctk.CTk):
 
         self.current_page_index = page_index
 
-
     def load_restricted_page(self):
-        # Load from DB instead of hardcoded lists
         self.blocked_apps = set(db.load_blocked_apps())
         self.blocked_urls = set(db.load_blocked_urls())
 
-        # Start blocking apps if any are in the list
         if self.blocked_apps:
             Utility.start_app_blocker(self.blocked_apps, scan_interval=1)
 
@@ -577,6 +572,7 @@ class TimeTrackerApp(ctk.CTk):
             add_btn.pack_configure(anchor="center")
 
         def add_app_db():
+            """adds """
             file_path = filedialog.askopenfilename(filetypes=[("Executable Files", "*.exe")])
             if file_path:
                 exe_name = os.path.basename(file_path)
@@ -589,13 +585,13 @@ class TimeTrackerApp(ctk.CTk):
                     refresh_blocked()
 
         def add_url_db():
+            """Creates the textbox popup to add url."""
             popup = ctk.CTkToplevel(self)
             popup.geometry("420x190")
             popup.title("Add Blocked URL")
             popup.configure(fg_color="#1c1c1c")
             popup.grab_set()
 
-            # Center the popup on screen
             popup.update_idletasks()
             width, height = 420, 190
             x = (popup.winfo_screenwidth() // 2) - (width // 2)
@@ -608,7 +604,6 @@ class TimeTrackerApp(ctk.CTk):
             entry = ctk.CTkEntry(popup, placeholder_text="e.g. facebook.com", font=("Segoe UI", 14))
             entry.pack(padx=20, pady=10, fill="x")
 
-            # Customizable warning message below the entry
             warn = ctk.CTkLabel(
                 popup,
                 text=getattr(self, "add_url_warning_message", ""),
@@ -620,6 +615,7 @@ class TimeTrackerApp(ctk.CTk):
             warn.pack(padx=16, pady=(0, 8))
 
             def submit():
+                """Holds the logic to accumulate url from textbox and database."""
                 url = entry.get().strip()
                 if url and url not in self.blocked_urls:
                     Utility.block_url(HOST_PATH, url)
@@ -636,14 +632,12 @@ class TimeTrackerApp(ctk.CTk):
     def load_app_usage_page(self, date: str):
         """Open a centered window showing a bar chart of app usage percentages for the given date."""
         try:
-            # Import matplotlib lazily to avoid import-time issues if not installed
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
             from matplotlib.figure import Figure
 
-            # Fetch raw usage durations (seconds) and convert to percentages
+            db.run_cleanup()
             usage = db.load_existing_appwise_usage(date)
             if not usage:
-                # Show simple info popup if no data
                 info = ctk.CTkToplevel(self)
                 info.title("App Usage")
                 w, h = 360, 140
@@ -664,12 +658,10 @@ class TimeTrackerApp(ctk.CTk):
             percent_pairs = [
                 (app, (float(dur) / total) * 100.0) for app, dur in usage.items()
             ]
-            # Sort by percentage desc
             percent_pairs.sort(key=lambda x: x[1], reverse=True)
             app_names = [a for a, _ in percent_pairs]
             percentages = [p for _, p in percent_pairs]
 
-            # Create window
             win = ctk.CTkToplevel(self)
             win.title("App Usage")
             width, height = 900, 600
@@ -678,52 +670,45 @@ class TimeTrackerApp(ctk.CTk):
             win.resizable(True, True)
             win.grab_set()
 
-            # Center
             win.update_idletasks()
             x = (win.winfo_screenwidth() // 2) - (width // 2)
             y = (win.winfo_screenheight() // 2) - (height // 2)
             win.geometry(f"{width}x{height}+{x}+{y}")
 
-            # Title
-            title = ctk.CTkLabel(win, text=f"App Usage for {date}", font=("Segoe UI", 24, "bold"), text_color="#00bfae")
+            date_object = datetime.strptime(date , "%Y-%m-%d")
+            formatted_date = date_object.strftime("%A, %B %d, %Y")
+
+            title = ctk.CTkLabel(win, text=f"App Usage for {formatted_date}", font=("Segoe UI", 24, "bold"), text_color="#00bfae")
             title.pack(pady=(20, 10))
 
-            # Container for chart
             chart_frame = ctk.CTkFrame(win, fg_color="#232b3b")
             chart_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
-            # Build matplotlib figure (modern dark styling)
             fig = Figure(figsize=(9.5, 5.2), dpi=100)
             fig.patch.set_facecolor("#232b3b")
             ax = fig.add_subplot(111)
             ax.set_facecolor("#232b3b")
 
-            bar_color = "#00bfae"  # app accent
+            bar_color = "#00bfae"  
             edge_color = "#00d1c6"
             bars = ax.bar(app_names, percentages, color=bar_color, edgecolor=edge_color, linewidth=0.6)
 
-            # Axis limits and labels
             ax.set_ylim(0, 100)
             ax.set_ylabel("Usage (%)", color="#ffffff", fontsize=13)
             ax.set_xlabel("")
 
-            # X ticks
             ax.set_xticks(range(len(app_names)))
             ax.set_xticklabels(app_names, rotation=30, ha='right', fontsize=10, color="#e0e0e0")
 
-            # Y ticks and grid
             ax.tick_params(axis='y', colors="#e0e0e0", labelsize=10)
             ax.grid(axis='y', linestyle='--', alpha=0.25, color="#9aa7b1")
 
-            # Spines
             for spine in ax.spines.values():
                 spine.set_color("#4a5568")
 
-            # Bar labels (percentages on top)
             try:
                 ax.bar_label(bars, fmt='%.1f%%', padding=3, fontsize=11, color="#ffffff")
             except Exception:
-                # Fallback manual annotation if bar_label not available
                 for rect, pct in zip(bars, percentages):
                     height = rect.get_height()
                     ax.annotate(f"{pct:.1f}%",
@@ -738,7 +723,6 @@ class TimeTrackerApp(ctk.CTk):
             canvas.draw()
             canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
 
-            # Back/Close button
             btn_row = ctk.CTkFrame(win, fg_color="transparent")
             btn_row.pack(fill="x", pady=(0, 16))
             back_btn = ctk.CTkButton(
@@ -756,6 +740,7 @@ class TimeTrackerApp(ctk.CTk):
             logger.exception(f"Failed to render app usage for {date}: {e}")
 
     def create_info_card(self, parent, title, value, color):
+        """Returns a parent card to hold the stats."""
         card = ctk.CTkFrame(parent, width=200, height=100, fg_color=color, corner_radius=12)
         card.pack_propagate(False)
         ctk.CTkLabel(card, text=title, font=("Segoe UI", 14, "bold"), text_color="black").pack(pady=(10, 0))
@@ -763,6 +748,7 @@ class TimeTrackerApp(ctk.CTk):
         return card
 
     def create_progress_section(self, parent, label_text, hours, color):
+        """Returns the parent frame to hold the progress bars."""
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         label_row = ctk.CTkFrame(frame, fg_color="transparent")
         label_row.pack(fill="x", pady=(0, 5))
@@ -778,11 +764,13 @@ class TimeTrackerApp(ctk.CTk):
         return frame
 
     def toggle_tracking(self):
+        """Holds the tracking logic initiator."""
         self.is_tracking = not self.is_tracking
         self.update_pause_btn()
         self.update_tracking_status_label()
     
     def set_warning_message(self, message):
+        """Sets a warning message to feed the label."""
         if hasattr(self, 'warning_message_label') and self.warning_message_label.winfo_exists():
             self.warning_message_label.configure(text=message)
         else:
@@ -791,12 +779,7 @@ class TimeTrackerApp(ctk.CTk):
                 self.warning_message_label.configure(text=message)
 
     def get_warning_message(self):
-        """
-        Get the current warning message.
-        
-        Returns:
-            str: The current warning message
-        """
+        """Returns a warning message to feed the label."""
         if hasattr(self, 'warning_message_label') and self.warning_message_label.winfo_exists():
             return self.warning_message_label.cget("text")
         return ""

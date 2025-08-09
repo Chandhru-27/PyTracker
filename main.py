@@ -1,19 +1,14 @@
 from frontend_ui.base_layout import TimeTrackerApp
 from state.userstate import UserActivityState
-from datetime import datetime , timedelta
 from utils.utilities import Utility
 from logs.app_logger import logger
-from frontend_ui import interface
 from trackers import trackers
-from frontend_ui import tst
+from datetime import datetime
 from storage import db
 import threading
 import ctypes
-import time
 import sys
-import os
 
- 
 if __name__ == "__main__":
 
     if not Utility.is_admin():
@@ -47,6 +42,7 @@ if __name__ == "__main__":
     tracker_thread = threading.Thread(target=trackers.activity_tracker, args=(state,), daemon=True)
     reminder_thread = threading.Thread(target=trackers.reminder_logic, args=(state,), daemon=True)
 
+    
     tracker_thread.start()
     reminder_thread.start()
   
@@ -54,4 +50,3 @@ if __name__ == "__main__":
     app.tracker_thread = tracker_thread
     app.reminder_thread = reminder_thread
     app.mainloop()
-    # interface.start_ui(shared_state=state)

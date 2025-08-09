@@ -1,38 +1,32 @@
-from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
+from datetime import datetime, timedelta
+from pycaw.pycaw import AudioUtilities
 from logs.app_logger import logger
-from datetime import datetime , timedelta
 import win32process
 import subprocess
 import pythoncom
 import threading
 import win32gui
 import psutil
-import winreg
 import ctypes
 import winreg
 import time
 import wmi
-import os
 
-# -------------------------
-# Utility Functions
-# -------------------------
-# Global application shutdown event (used by timers/trackers)
+""" Global application shutdown event (used by timers/trackers)."""
 shutdown_event = threading.Event()
 
-# Dedicated shutdown for app blocker threads only
+"""Dedicated shutdown for app blocker threads only."""
 app_blocker_shutdown_event = threading.Event()
 
 app_blocker_threads = []
 
 class Utility:
+    """Collection of system utilities for activity tracking and app/URL blocking."""
     audio_lock = threading.Lock()
 
     @staticmethod
     def get_idle_time():
-        """`
-        Returns the idle time in seconds using Windows APIs.
-        """
+        """Return user idle time in seconds using Windows APIs."""
         class LASTINPUTINFO(ctypes.Structure):
             _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
 
@@ -50,9 +44,7 @@ class Utility:
 
     @staticmethod
     def get_active_window_title():
-        """
-        Returns the title of the currently focused window.
-        """
+        """Return process name of the foreground window (lower-level via Win32)."""
         handle = win32gui.GetForegroundWindow()
         try:
             _,process_id = win32process.GetWindowThreadProcessId(handle)
@@ -63,6 +55,7 @@ class Utility:
 
     @staticmethod
     def get_installed_apps():
+        """Enumerate installed applications from common registry locations."""
         apps = set()
         reg_paths = [
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -87,18 +80,14 @@ class Utility:
 
     @staticmethod
     def get_active_audio_status():
-        """
-        Get the active audio status safely from a single thread.
-        """
+        """Return True if there is any active audio session with non-zero volume."""
         with Utility.audio_lock:
             import comtypes
             from comtypes import CoInitialize, CoUninitialize
             try:
-                # Initialize seperate thread for working with audio
                 CoInitialize()
             except Exception:
-                pass  # Already initialized
-
+                pass 
             try:
                 sessions = AudioUtilities.GetAllSessions()
                 for session in sessions:
@@ -112,7 +101,6 @@ class Utility:
                         continue
                 return False
             finally:
-                # Basic cleanup of initialized threads
                 try:
                     CoUninitialize()
                 except Exception:
@@ -120,9 +108,7 @@ class Utility:
 
     @staticmethod
     def terminate_blocked_app(process_name, blocked_apps):
-        """
-        Terminates a process if it's in the blocked_apps list.
-        """ 
+        """Terminate a process by name if it is present in the blocked set."""
         try:
             if process_name in blocked_apps:
                 for proc in psutil.process_iter(['pid', 'name']):
@@ -134,9 +120,7 @@ class Utility:
 
     @staticmethod
     def kill_process_tree(pid):
-        """
-        Kills the given process and all its child processes.
-        """
+        """Kill a process and all of its child processes by PID."""
         try:
             parent = psutil.Process(pid)
             for child in parent.children(recursive=True):
@@ -152,11 +136,11 @@ class Utility:
 
     @staticmethod
     def background_scanner(blocked_apps: set, scan_interval: int = 5):
-        """Scans for and kills blocked apps, with fast shutdown support."""
+        """Scan processes periodically and kill those matching blocked apps (fast shutdown)."""
         while not app_blocker_shutdown_event.is_set():
             try:
                 for proc in psutil.process_iter(['name', 'pid']):
-                    if app_blocker_shutdown_event.is_set():  # Check during iteration
+                    if app_blocker_shutdown_event.is_set():
                         break
                     try:
                         proc_name = proc.info['name']
@@ -166,7 +150,6 @@ class Utility:
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass
                 
-                # Sleep in small chunks to respond quickly to shutdown
                 for _ in range(scan_interval):
                     if app_blocker_shutdown_event.is_set():
                         break
@@ -178,6 +161,7 @@ class Utility:
 
     @staticmethod
     def wmi_event_watcher(blocked_apps: set):
+        """Watch process creation events and terminate newly started blocked apps."""
         pythoncom.CoInitialize()
         try:
             while not app_blocker_shutdown_event.is_set():
@@ -188,7 +172,7 @@ class Utility:
 
                     while not app_blocker_shutdown_event.is_set():
                         try:
-                            new_proc = watcher(timeout_ms=1000)  # 1-second timeout
+                            new_proc = watcher(timeout_ms=1000)
 
                             if new_proc and new_proc.Name.lower() in blocked_apps:
                                 logger.info(f"Blocking {new_proc.Name} (PID: {new_proc.ProcessId})")
@@ -196,10 +180,10 @@ class Utility:
 
                         except wmi.x_wmi as e:
                             if "timed out" in str(e):
-                                continue  # Normal timeout, retry
+                                continue 
                             else:
                                 logger.debug(f"[WMI] Event error: {e}")
-                                break  # Reconnect watcher on actual error
+                                break 
 
                         except Exception as e:
                             logger.error(f"[WMI] Unexpected error: {e}", exc_info=True)
@@ -209,19 +193,18 @@ class Utility:
                     logger.error(f"[WMI] Connection failed: {e}")
                     if app_blocker_shutdown_event.is_set():
                         break
-                    time.sleep(5)  # Retry after delay
+                    time.sleep(5) 
 
         finally:
             pythoncom.CoUninitialize()
 
     @staticmethod
     def start_app_blocker(blocked_apps: set, scan_interval: int = 5 ):
-        """Starts both background scanning and event watching."""
+        """Start both background scanner and WMI watcher for the given blocked apps."""
         global app_blocker_threads
         if not blocked_apps:
-            return  # Nothing to block
+            return  
         
-        # Only control blocker threads; do not affect global app shutdown
         app_blocker_shutdown_event.clear()
         t1 = threading.Thread(target=Utility.background_scanner, args=(blocked_apps, scan_interval), daemon=True)
         t2 = threading.Thread(target=Utility.wmi_event_watcher, args=(blocked_apps,), daemon=True)
@@ -229,18 +212,16 @@ class Utility:
         t1.start()
         t2.start()
 
-
         app_blocker_threads = [t1 , t2]
         logger.debug(f"App blocker started for: {', '.join(blocked_apps)}")
 
     @staticmethod
     def stop_app_blocker():
-        """Stop and reset blocked apps"""
+        """Stop app blocker threads and reset internal state."""
         global app_blocker_threads
         if not app_blocker_threads:
             return
         
-        # Signal only blocker threads to stop
         app_blocker_shutdown_event.set()
 
         for thread in app_blocker_threads:
@@ -252,6 +233,7 @@ class Utility:
 
     @staticmethod
     def block_url(HOST_PATH , website):
+        """Append a hosts-file entry for the given website if not already present."""
         try:
             with open(HOST_PATH , 'r+') as file:
                 file_data = file.read()
@@ -263,11 +245,11 @@ class Utility:
         
     @staticmethod
     def clean_hosts_file(HOST_PATH: str, BLOCKED_DOMAIN: str):
+        """Remove lines containing the domain from hosts file to unblock it."""
         try:
             with open(HOST_PATH, 'r') as file:
                 lines = file.readlines()
 
-            # Filter lines that do NOT contain the blocked domain
             new_lines = [line for line in lines if BLOCKED_DOMAIN not in line]
 
             with open(HOST_PATH, 'w') as file:
@@ -283,6 +265,7 @@ class Utility:
 
     @staticmethod
     def restart_dns_service():
+        """Restart the Windows DNS Client service to apply hosts changes."""
         try:
             subprocess.run(["net", "stop", "dnscache"], check=True)
             subprocess.run(["net", "start", "dnscache"], check=True)
@@ -292,6 +275,7 @@ class Utility:
 
     @staticmethod
     def flush_dns():
+        """Flush DNS cache to apply hosts changes immediately."""
         try:
             subprocess.run(["ipconfig", "/flushdns"], check=True)
             logger.debug("[+] DNS cache flushed.")
@@ -300,6 +284,7 @@ class Utility:
         
     @staticmethod
     def is_admin():
+        """Return True if the process has administrative privileges."""
         try:
             return ctypes.windll.shell32.IsUserAnAdmin()
         except:
@@ -307,6 +292,7 @@ class Utility:
     
     @staticmethod
     def is_notification_disabled():
+        """Return True/False if Windows toast notifications are disabled; None if unknown."""
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
@@ -320,6 +306,7 @@ class Utility:
     
     @staticmethod
     def is_focus_assist_on():
+        """Return True/False if Focus Assist is active; None if unknown."""
         try:
             key = winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER,
@@ -332,61 +319,10 @@ class Utility:
             return None
 
     @staticmethod
-    def run_every(interval: float, func: callable, *args, **kwargs):
-        """
-        Precise interval timer with:
-        - Zero time drift (self-correcting)
-        - Shutdown safety
-        - Error handling
-        - Resource monitoring
-        """
-        next_time = time.time()
-        while not shutdown_event.is_set():
-            try:
-                # Execute the target function
-                func(*args, **kwargs)  
-                
-                # Calculate dynamic sleep time
-                next_time += interval
-                sleep_time = next_time - time.time()
-                
-                # Log resources (optional)
-                if __debug__:  # Only log in debug mode
-                    proc = psutil.Process()
-                    logger.debug(
-                        f"Resources | "
-                        f"CPU: {proc.cpu_percent():.1f}% | "
-                        f"RAM: {proc.memory_info().rss / 1024 ** 2:.1f} MB"
-                    )
-                
-                # Handle delays intelligently
-                if sleep_time > 0:
-                    # Sleep in chunks to respond to shutdown quickly
-                    for _ in range(int(sleep_time * 10)):
-                        if shutdown_event.is_set():
-                            return
-                        time.sleep(0.1)
-                else:
-                    # If behind schedule, skip sleep but log the delay
-                    delay = -sleep_time
-                    if delay > interval * 0.1:  # Only log significant delays
-                        logger.warning(f"Can't keep up! Delay: {delay:.2f}s")
-                    next_time = time.time()  # Full resync
-
-            except Exception as e:
-                logger.error(f"Periodic task crashed: {e}", exc_info=True)
-                if shutdown_event.is_set():
-                    return  # Avoid retry during shutdown
-                time.sleep(min(5, interval))  # Backoff before retry
-
-    @staticmethod
     def run_precise_timer(interval: float, func: callable, *args, **kwargs):
-        """
-        High-precision timer for break time tracking.
-        Detects sleep/resume gaps and passes them to the callback.
-        """
+        """High-precision timer that passes detected sleep/idle gaps to the callback."""
         next_time = time.time()
-        last_real_time = datetime.now()  # wall-clock tracking
+        last_real_time = datetime.now() 
 
         while not shutdown_event.is_set():
             try:
@@ -394,7 +330,6 @@ class Utility:
                 gap_seconds = (now_real - last_real_time).total_seconds()
                 last_real_time = now_real
 
-                # Pass the detected gap to the callback
                 func(*args, gap_seconds=gap_seconds, **kwargs)
 
                 next_time += interval
@@ -403,62 +338,21 @@ class Utility:
                 if sleep_time > 0:
                     time.sleep(sleep_time)
                 else:
-                    # If behind schedule, reset
                     next_time = time.time()
 
             except Exception as e:
                 logger.error(f"Precise timer crashed: {e}", exc_info=True)
                 if shutdown_event.is_set():
                     return
-                time.sleep(1)  # Short backoff
+                time.sleep(1) 
 
+    @staticmethod
     def thread_monitor():
+        """Continuously print a summary of active threads for diagnostics."""
         while True:
-            active_threads = threading.active_coun40t()
+            active_threads = threading.active_count()
             print("\n[THREAD MONITOR] Active threads:", active_threads)
             for t in threading.enumerate():
                 print(f"  - Name: {t.name}, Daemon: {t.daemon}")
-            time.sleep(5)  # check every 5 seconds
+            time.sleep(5)
 
-    @staticmethod
-    def run_adaptive_timer(base_interval: float, func: callable, *args, **kwargs):
-        """
-        CPU-efficient adaptive timer for break time tracking:
-        - Adaptive intervals based on user activity
-        - Shorter intervals when active, longer when idle
-        - Minimal CPU usage during idle periods
-        - Maintains precision for break detection
-        """
-        next_time = time.time()
-        current_interval = base_interval
-        
-        while not shutdown_event.is_set():
-            try:
-                # Execute the target function
-                func(*args, **kwargs)
-                
-                # Adaptive interval based on idle time
-                idle_time = Utility.get_idle_time()
-                if idle_time > 120:  # 2+ minutes idle
-                    current_interval = min(5.0, base_interval * 3)  # Longer intervals when very idle
-                elif idle_time > 60:  # 1+ minutes idle
-                    current_interval = min(3.0, base_interval * 2)  # Medium intervals when idle
-                else:
-                    current_interval = base_interval  # Normal intervals when active
-                
-                # Simple, precise timing
-                next_time += current_interval
-                sleep_time = next_time - time.time()
-
-                # Minimal sleep handling
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-                else:
-                    # If behind schedule, reset to current time
-                    next_time = time.time()
-
-            except Exception as e:
-                logger.error(f"Adaptive timer crashed: {e}", exc_info=True)
-                if shutdown_event.is_set():
-                    return
-                time.sleep(1)  # Short backoff
