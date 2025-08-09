@@ -50,3 +50,4 @@ if __name__ == "__main__":
     app.tracker_thread = tracker_thread
     app.reminder_thread = reminder_thread
     app.mainloop()
+

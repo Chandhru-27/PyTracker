@@ -42,11 +42,9 @@ class Database:
         for attempt in range(MAX_RETRIES):
             try:
                 with self.get_connection() as (conn, cursor):
-                    # Check which tables exist
                     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
                     existing_tables = {row[0] for row in cursor.fetchall()}
-                    
-                    # Create missing tables
+                
                     for table_name, create_sql in required_tables.items():
                         if table_name not in existing_tables:
                             logger.info(f"Creating missing table: {table_name}")
@@ -253,7 +251,7 @@ class Database:
             logger.debug("Failed to run database cleanup.")
     
     # ---------- Helpers ----------
-    
+
     def get_user_stat_id(self, date: str):
         """Returns the foreign key to map with app usage table."""
         result = self.fetch_one("SELECT id FROM GENERAL_USAGE WHERE date = ?", (date,))
@@ -317,3 +315,26 @@ class Database:
             "SELECT 1 FROM blocked_urls WHERE url = ? LIMIT 1",
             (url,)
         ) is not None
+
+    def get_weekly_average_screen_time(self, days: int = 7) -> int:
+        """
+        Returns the average daily screen_time (in seconds) over the most recent `days` entries.
+        If fewer than `days` rows exist, averages over the available rows.
+        """
+        row = self.fetch_one(
+            """
+            SELECT AVG(screen_time) AS avg_seconds
+            FROM (
+                SELECT screen_time
+                FROM GENERAL_USAGE
+                ORDER BY date DESC
+                LIMIT ?
+            ) AS last_n
+            """,
+            (days,),
+        )
+        try:
+            avg_seconds = int(row[0]) if row and row[0] is not None else 0
+        except Exception:
+            avg_seconds = 0
+        return avg_seconds

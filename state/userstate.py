@@ -26,21 +26,46 @@ class UserActivityState:
         self.is_paused = False
 
     def update(self):
-        """Update activity metrics based on idle time, active window, and audio status."""
+        """Update activity metrics based on idle time, active window, and audio status.
+        Edge-case handling:
+        - Respect pause: when paused, do not mutate timers or accumulate breaks
+        - Day rollover: reset counters safely
+        - Break timing: accumulate break duration incrementally while idle
+        - Clamp elapsed to sane bounds to avoid large jumps on clock changes
+        - Avoid counting unknown window names in per-app map
+        """
         with self.lock:
             now = datetime.now()
             today = now.date()
 
+            if self.screen_time > 86400: 
+                logger.warning("Screen time exceeded 24 hours, resetting to zero.")
+                self.screen_time = 0
+            if self.total_break_duration > 86400: 
+                logger.warning("Total break duration exceeded 24 hours, resetting to zero.")
+                self.total_break_duration = 0
+            
             if today != self.last_date:
                 self.reset_daily_counters()
                 self.last_date = today
                 logger.debug("Day rollover detect and handled properly.")
 
+            if self.is_paused:
+                self.last_check = now
+                return
+
             process_name = Utility.get_active_window_title()
-            window = os.path.splitext(process_name)[0].lower()
+            window = os.path.splitext(process_name)[0].lower() if process_name else ""
             audio = Utility.get_active_audio_status()
 
             elapsed = (now - self.last_check).total_seconds()
+
+            if elapsed < 0:
+                elapsed = 0
+            elif elapsed > 5:
+                logger.warning(f"Large elapsed time detected: {elapsed:.2f}s, clamping to 5s")
+                elapsed = 5
+
             self.idle_time = Utility.get_idle_time()
             self.active_window = window
             self.is_active_audio = audio
@@ -51,15 +76,20 @@ class UserActivityState:
             is_active_user = (self.idle_time < 60) or (is_video_playback and self.is_active_audio)
 
             if is_active_user:
+                if self.break_start_time is not None:
+                    self.break_start_time = None
                 self.screen_time += elapsed
                 self.total_stretch_time += elapsed
-                self.screentime_per_app[window] = self.screentime_per_app.get(window, 0) + elapsed
+                if window and window != "unknow":
+                    self.screentime_per_app[window] = self.screentime_per_app.get(window, 0) + elapsed
             else:
                 if not is_video_playback and self.idle_time >= 60:
                     if self.break_start_time is None:
                         logger.debug(f"total screen time: {self.get_formatted_screen_time(self.screen_time)}")
-                        logger.debug("user is idle")
+                        logger.debug("user is idle — starting break timer")
                         self.break_start_time = now
+                    else:
+                        self.total_break_duration += elapsed
 
         self.last_check = now
 

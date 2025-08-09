@@ -29,8 +29,8 @@ class TimeTrackerApp(ctk.CTk):
         )
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.title("PyTracker")
-        self.geometry("1200x720")
         self.minsize(900, 700)
+        self.bind("<Configure>", self.on_window_resize)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
         
@@ -57,6 +57,8 @@ class TimeTrackerApp(ctk.CTk):
 
         # ==== Navigation Buttons with Modern Colors ===== #
         self.nav_buttons = {}
+        self._nav_icon_sources = {}
+        self._nav_ctk_images = {}
         nav_items = [
             ("Home", "home.png"),
             ("Restricted", "block.png"),
@@ -65,7 +67,9 @@ class TimeTrackerApp(ctk.CTk):
         for name, icon_file in nav_items:
             icon_path = os.path.join("frontend_ui", icon_file)
             icon_img = Image.open(icon_path)
+            self._nav_icon_sources[name] = icon_img
             icon = ctk.CTkImage(icon_img, size=(28, 28))
+            self._nav_ctk_images[name] = icon
             btn = ctk.CTkButton(
                 self.sidebar_frame, text=name, image=icon, compound="left",
                 font=("Segoe UI", 15), corner_radius=12, fg_color="#232b3b", hover_color="#2979ff",
@@ -81,8 +85,83 @@ class TimeTrackerApp(ctk.CTk):
 
         self.current_page = None
         self.load_page("Home")
+
+        self.current_breakpoint = None
+        self.responsive_rules = {
+            "xl": {
+                "sidebar_w": 220, "nav_font": 15, "nav_height": 40, "nav_icon": 28,
+                "heading": 40, "pause": 48, "reset": 48, "progress": 22,
+                "stat_icon": 28, "stat_title": 17, "stat_value": 28,
+            },
+            "lg": {
+                "sidebar_w": 210, "nav_font": 15, "nav_height": 38, "nav_icon": 26,
+                "heading": 38, "pause": 46, "reset": 46, "progress": 21,
+                "stat_icon": 26, "stat_title": 16, "stat_value": 26,
+            },
+            "md": {
+                "sidebar_w": 195, "nav_font": 14, "nav_height": 36, "nav_icon": 24,
+                "heading": 36, "pause": 44, "reset": 44, "progress": 20,
+                "stat_icon": 24, "stat_title": 15, "stat_value": 24,
+            },
+            "sm": {
+                "sidebar_w": 180, "nav_font": 13, "nav_height": 36, "nav_icon": 22,
+                "heading": 34, "pause": 42, "reset": 42, "progress": 19,
+                "stat_icon": 22, "stat_title": 14, "stat_value": 22,
+            },
+            "xs": {
+                "sidebar_w": 170, "nav_font": 13, "nav_height": 34, "nav_icon": 20,
+                "heading": 32, "pause": 42, "reset": 42, "progress": 18,
+                "stat_icon": 20, "stat_title": 13, "stat_value": 20,
+            },
+        }
     
-    def build_warning_card(self, parent):
+    def build_warning_card(self, parent, compact: bool = False):
+        # Clear any previous warning widgets in the given parent
+        for child in parent.winfo_children():
+            try:
+                child.destroy()
+            except Exception:
+                pass
+
+        if compact:
+            # Compact single-line/paragraph label to avoid layout issues on small screens
+            if self.is_tracking:
+                text = "💡 Reminder: While taking a break, minimize all activity and let your system idle or enter sleep mode."
+                color = "#fcc326"
+            else:
+                text = "⚠️ Warning: Tracking disabled. Resume immediately to continue logging activity and breaks."
+                color = "#CF0000"
+
+            self.warning_card = None
+            self.warning_compact_label = ctk.CTkLabel(
+                parent,
+                text=text,
+                font=("Segoe UI", 13, "bold"),
+                text_color=color,
+                wraplength=900,
+                justify="left",
+            )
+            self.warning_compact_label.pack(fill="x", padx=30, pady=(6, 10))
+
+            def update_warning_message():
+                if self.is_tracking:
+                    self.warning_compact_label.configure(
+                        text=(
+                            "💡 Reminder: While taking a break, minimize all activity and let your system idle or enter sleep mode."
+                        ),
+                        text_color="#fcc326",
+                    )
+                else:
+                    self.warning_compact_label.configure(
+                        text=(
+                            "⚠️ Warning: Tracking disabled. Resume immediately to continue logging activity and breaks."
+                        ),
+                        text_color="#CF0000",
+                    )
+            self.update_warning_message = update_warning_message
+            update_warning_message()
+            return
+
         self.warning_card = ctk.CTkFrame(parent, fg_color="#232b3b", corner_radius=16)
         self.warning_card.pack(fill="x", padx=30, pady=(0, 18))
 
@@ -93,7 +172,7 @@ class TimeTrackerApp(ctk.CTk):
         header_frame.pack(anchor="w")
 
         head = text = ""
-        head_color =  text_color = None
+        head_color = text_color = None
         if not self.is_tracking:
             head = "Warning"
             text = "Tracking disabled. Resume immediately to continue logging activity and breaks."
@@ -102,7 +181,7 @@ class TimeTrackerApp(ctk.CTk):
         else:
             head = "Reminder"
             text = "While taking a break, minimize all activity and let your system idle or enter sleep mode."
-            text_color = "#E6E6E6"
+            text_color = "#fcc326"
             head_color = "#e7b500"
 
         self.warning_icon_label = ctk.CTkLabel(header_frame, text="⚠️", font=("Segoe UI", 24), text_color=head_color)
@@ -111,14 +190,13 @@ class TimeTrackerApp(ctk.CTk):
         self.warning_head_label = ctk.CTkLabel(header_frame, text=head, font=("Segoe UI", 18, "bold"), text_color=head_color)
         self.warning_head_label.pack(side="left")
 
-        
         self.warning_message_label = ctk.CTkLabel(
             content_frame,
             text=text,
             font=("Segoe UI", 16, "bold"),
             text_color=text_color,
             wraplength=800,
-            justify="left"
+            justify="left",
         )
         self.warning_message_label.pack(anchor="w", pady=(4, 0))
 
@@ -128,14 +206,14 @@ class TimeTrackerApp(ctk.CTk):
                 self.warning_head_label.configure(text="Reminder", text_color="#e7b500")
                 self.warning_message_label.configure(
                     text="While taking a break, minimize all activity and let your system idle or enter sleep mode.",
-                    text_color="#E6E6E6"
+                    text_color="#fcc326",
                 )
             else:
                 self.warning_icon_label.configure(text="⚠️", text_color="#ff0000")
                 self.warning_head_label.configure(text="Warning", text_color="#ff0000")
                 self.warning_message_label.configure(
                     text="Tracking disabled. Resume immediately to continue logging activity and breaks.",
-                    text_color="#CF0000"
+                    text_color="#CF0000",
                 )
 
         self.update_warning_message = update_warning_message
@@ -246,9 +324,9 @@ class TimeTrackerApp(ctk.CTk):
         heading_row = ctk.CTkFrame(dashboard_container, fg_color="transparent")
         heading_row.pack(fill="x", padx=30, pady=(40, 0))
 
-        top_label = ctk.CTkLabel(heading_row, text="Dashboard",
+        self.dashboard_heading = ctk.CTkLabel(heading_row, text="Dashboard",
                                       font=("Segoe UI", 40, "bold"), text_color="#00bfae")
-        top_label.pack(side="left")
+        self.dashboard_heading.pack(side="left")
 
         def toggle_tracking():
             self.is_tracking = not self.is_tracking
@@ -279,10 +357,10 @@ class TimeTrackerApp(ctk.CTk):
                 print("Reset performed")
             show_reset_warning(reset_timer)
         
-        reset_btn = ctk.CTkButton(heading_row, width=48, height=48, corner_radius=24, font=("Segoe UI", 24),
+        self.reset_btn = ctk.CTkButton(heading_row, width=48, height=48, corner_radius=24, font=("Segoe UI", 24),
                                   text="⟳", fg_color="#232b3b", hover_color="#2979ff", text_color="#fff",
                                   command=on_reset_click)
-        reset_btn.pack(side="right", padx=(0, 10))
+        self.reset_btn.pack(side="right", padx=(0, 10))
 
         date_label = ctk.CTkLabel(dashboard_container, text=datetime.now().strftime("%A, %B %d, %Y"),
                                       font=("Segoe UI", 18), text_color="#b0b8c1")
@@ -310,10 +388,10 @@ class TimeTrackerApp(ctk.CTk):
         )
         todays_card.pack(side="left", padx=30)
 
-        weekly_card, _ = self.create_stat_card(
-            stats_frame, "Weekly Avg", "5.2h", "📈", "#00bfae", wide=True
+        self.weekly_card, self.weekly_avg_label = self.create_stat_card(
+            stats_frame, "Weekly Avg", "0h 0m", "📈", "#00bfae", wide=True
         )
-        weekly_card.pack(side="left", padx=30)
+        self.weekly_card.pack(side="left", padx=30)
         
         # ========== Screen Time Progress ==========
         st_frame = ctk.CTkFrame(dashboard_container, fg_color="transparent")
@@ -357,26 +435,147 @@ class TimeTrackerApp(ctk.CTk):
         bt_frame = ctk.CTkFrame(dashboard_container, fg_color="transparent")
         bt_frame.pack(pady=(5, 0), padx=30, fill="x")
 
-        ctk.CTkLabel(bt_frame, text="Break Time Today", font=("Segoe UI", 18, "bold"), text_color="#2979ff").pack(anchor="w", padx=15, pady=(10, 5))
+        ctk.CTkLabel(bt_frame, text="Break Time Today", font=("Segoe UI", 18, "bold"), text_color="#2979ff").pack(anchor="w", padx=15, pady=(6, 4))
 
         self.break_time_progress = ctk.CTkProgressBar(bt_frame, height=22, progress_color="#2979ff")
         self.break_time_progress.pack(fill="x", padx=15)
 
-        self.break_time_percent_label = ctk.CTkLabel(bt_frame, text="0%", font=("Segoe UI", 15), text_color="#ffffff")
-        self.break_time_percent_label.pack(anchor="w", padx=15)
-
-        self.break_time_time_label = ctk.CTkLabel(bt_frame, text="0h 0m / 24h", font=("Segoe UI", 14), text_color="#b0b8c1")
-        self.break_time_time_label.pack(anchor="e", padx=15)
-
         status_frame2 = ctk.CTkFrame(bt_frame, fg_color="transparent")
-        status_frame2.pack(fill="x", padx=15, pady=5)
+        status_frame2.pack(fill="x", padx=15, pady=(2, 4))
+        self.break_time_percent_label = ctk.CTkLabel(status_frame2, text="0%", font=("Segoe UI", 15), text_color="#ffffff")
+        self.break_time_percent_label.pack(side="left")
+        self.break_time_time_label = ctk.CTkLabel(status_frame2, text="0h 0m / 24h", font=("Segoe UI", 14), text_color="#b0b8c1")
+        self.break_time_time_label.pack(side="right")
 
         # ========== Warning Card Section ==========
-        self.build_warning_card(bottom_warning_container)
+        # Store container to rebuild warning view on size changes
+        self.bottom_warning_container = bottom_warning_container
+        # Build full card by default; compact will be applied on resize if needed
+        self.build_warning_card(self.bottom_warning_container, compact=False)
         ctk.CTkFrame(dashboard_container, height=1, fg_color="transparent").pack(fill="both", expand=True)
         
         self.current_page = "Home"
         self.update_progress_bars()
+
+        # Reset compact_mode so fresh render applies correctly
+        self.compact_mode = None
+        # Apply compact layout on first render as needed, forcing rebuild
+        self.after(0, lambda: self.apply_compact_layout(self.should_use_compact(), force=True))
+        # Also apply breakpoint-driven scaling on first render
+        self.after(0, self.apply_breakpoints)
+
+    def should_use_compact(self) -> bool:
+        try:
+            return self.winfo_height() <= 720 or self.winfo_width() <= 1200
+        except Exception:
+            return False
+
+    def on_window_resize(self, event):
+        if event.widget is not self:
+            return
+        self.apply_compact_layout(self.should_use_compact())
+        self.apply_breakpoints()
+
+    def apply_compact_layout(self, compact: bool, force: bool = False):
+        # Avoid redundant reconfiguration
+        if not force and getattr(self, "compact_mode", None) == compact:
+            return
+        self.compact_mode = compact
+
+        # Sidebar scaling
+        try:
+            self.sidebar_frame.configure(width=(170 if compact else 220))
+            for btn in getattr(self, "nav_buttons", {}).values():
+                btn.configure(font=("Segoe UI", 13 if compact else 15), height=(36 if compact else 40))
+        except Exception:
+            pass
+
+        # Heading and control buttons
+        try:
+            if hasattr(self, "dashboard_heading") and self.dashboard_heading.winfo_exists():
+                self.dashboard_heading.configure(font=("Segoe UI", 32 if compact else 40, "bold"))
+            if hasattr(self, "pause_btn") and self.pause_btn.winfo_exists():
+                self.pause_btn.configure(width=(42 if compact else 48), height=(42 if compact else 48), font=("Segoe UI", 24 if compact else 28))
+            if hasattr(self, "reset_btn") and self.reset_btn.winfo_exists():
+                self.reset_btn.configure(width=(42 if compact else 48), height=(42 if compact else 48), font=("Segoe UI", 20 if compact else 24))
+        except Exception:
+            pass
+
+        # Progress bars thickness
+        try:
+            if hasattr(self, "screen_time_progress") and self.screen_time_progress.winfo_exists():
+                self.screen_time_progress.configure(height=(18 if compact else 22))
+            if hasattr(self, "break_time_progress") and self.break_time_progress.winfo_exists():
+                self.break_time_progress.configure(height=(18 if compact else 22))
+        except Exception:
+            pass
+
+        # Warning presentation: compact text for small, full card for large
+        try:
+            if hasattr(self, "bottom_warning_container") and self.bottom_warning_container.winfo_exists():
+                self.build_warning_card(self.bottom_warning_container, compact=compact)
+        except Exception:
+            pass
+
+    def get_breakpoint(self) -> str:
+        """Return responsive breakpoint similar to CSS media queries.
+        xl: >1400, lg: >1200, md: >1000, sm: >850, xs: <=850
+        """
+        w = 0
+        try:
+            w = self.winfo_width()
+        except Exception:
+            return "md"
+        if w > 1400:
+            return "xl"
+        if w > 1200:
+            return "lg"
+        if w > 1000:
+            return "md"
+        if w > 850:
+            return "sm"
+        return "xs"
+
+    def apply_breakpoints(self):
+        bp = self.get_breakpoint()
+        if self.current_breakpoint == bp:
+            return
+        self.current_breakpoint = bp
+        rules = self.responsive_rules.get(bp, self.responsive_rules["md"])
+
+        # Sidebar and nav buttons
+        try:
+            self.sidebar_frame.configure(width=rules["sidebar_w"])
+            for name, btn in self.nav_buttons.items():
+                btn.configure(font=("Segoe UI", rules["nav_font"]), height=rules["nav_height"], width=rules["sidebar_w"] - 40)
+                # Resize icons
+                if name in self._nav_icon_sources:
+                    src = self._nav_icon_sources[name]
+                    img = ctk.CTkImage(src, size=(rules["nav_icon"], rules["nav_icon"]))
+                    self._nav_ctk_images[name] = img
+                    btn.configure(image=img)
+        except Exception:
+            pass
+
+        # Headings and buttons
+        try:
+            if hasattr(self, "dashboard_heading") and self.dashboard_heading.winfo_exists():
+                self.dashboard_heading.configure(font=("Segoe UI", rules["heading"], "bold"))
+            if hasattr(self, "pause_btn") and self.pause_btn.winfo_exists():
+                self.pause_btn.configure(width=rules["pause"], height=rules["pause"], font=("Segoe UI", max(20, rules["pause"] - 20)))
+            if hasattr(self, "reset_btn") and self.reset_btn.winfo_exists():
+                self.reset_btn.configure(width=rules["reset"], height=rules["reset"], font=("Segoe UI", max(18, rules["reset"] - 22)))
+        except Exception:
+            pass
+
+        # Progress bars
+        try:
+            if hasattr(self, "screen_time_progress") and self.screen_time_progress.winfo_exists():
+                self.screen_time_progress.configure(height=rules["progress"])
+            if hasattr(self, "break_time_progress") and self.break_time_progress.winfo_exists():
+                self.break_time_progress.configure(height=rules["progress"])
+        except Exception:
+            pass
 
 
     def update_progress_bars(self):
@@ -402,6 +601,16 @@ class TimeTrackerApp(ctk.CTk):
 
             if hasattr(self, "todays_usage_label") and self.todays_usage_label.winfo_exists():
                 self.todays_usage_label.configure(text=f"{st_hours}h {st_mins}m")
+
+            # Update weekly average label dynamically from DB
+            try:
+                weekly_avg_seconds = db.get_weekly_average_screen_time(days=7)
+                wa_hours = int(weekly_avg_seconds // 3600)
+                wa_mins = int((weekly_avg_seconds % 3600) // 60)
+                if hasattr(self, "weekly_avg_label") and self.weekly_avg_label.winfo_exists():
+                    self.weekly_avg_label.configure(text=f"{wa_hours}h {wa_mins}m")
+            except Exception:
+                pass
 
             brk_hours = int(break_sec // 3600)
             brk_mins = int((break_sec % 3600) // 60)
@@ -783,5 +992,3 @@ class TimeTrackerApp(ctk.CTk):
         if hasattr(self, 'warning_message_label') and self.warning_message_label.winfo_exists():
             return self.warning_message_label.cget("text")
         return ""
-
-
