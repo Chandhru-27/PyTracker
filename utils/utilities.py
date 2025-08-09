@@ -17,7 +17,12 @@ import os
 # -------------------------
 # Utility Functions
 # -------------------------
+# Global application shutdown event (used by timers/trackers)
 shutdown_event = threading.Event()
+
+# Dedicated shutdown for app blocker threads only
+app_blocker_shutdown_event = threading.Event()
+
 app_blocker_threads = []
 
 class Utility:
@@ -148,10 +153,10 @@ class Utility:
     @staticmethod
     def background_scanner(blocked_apps: set, scan_interval: int = 5):
         """Scans for and kills blocked apps, with fast shutdown support."""
-        while not shutdown_event.is_set():
+        while not app_blocker_shutdown_event.is_set():
             try:
                 for proc in psutil.process_iter(['name', 'pid']):
-                    if shutdown_event.is_set():  # Check during iteration
+                    if app_blocker_shutdown_event.is_set():  # Check during iteration
                         break
                     try:
                         proc_name = proc.info['name']
@@ -163,25 +168,25 @@ class Utility:
                 
                 # Sleep in small chunks to respond quickly to shutdown
                 for _ in range(scan_interval):
-                    if shutdown_event.is_set():
+                    if app_blocker_shutdown_event.is_set():
                         break
                     time.sleep(1)
             except Exception as e:
                 logger.error(f"[SCAN] Unexpected error: {e}", exc_info=True)
-                if shutdown_event.is_set():
+                if app_blocker_shutdown_event.is_set():
                     break
 
     @staticmethod
     def wmi_event_watcher(blocked_apps: set):
         pythoncom.CoInitialize()
         try:
-            while not shutdown_event.is_set():
+            while not app_blocker_shutdown_event.is_set():
                 try:
                     c = wmi.WMI()
                     watcher = c.Win32_Process.watch_for("creation")
                     logger.debug("[WMI] Listening for new processes...")
 
-                    while not shutdown_event.is_set():
+                    while not app_blocker_shutdown_event.is_set():
                         try:
                             new_proc = watcher(timeout_ms=1000)  # 1-second timeout
 
@@ -202,7 +207,7 @@ class Utility:
 
                 except Exception as e:
                     logger.error(f"[WMI] Connection failed: {e}")
-                    if shutdown_event.is_set():
+                    if app_blocker_shutdown_event.is_set():
                         break
                     time.sleep(5)  # Retry after delay
 
@@ -216,8 +221,8 @@ class Utility:
         if not blocked_apps:
             return  # Nothing to block
         
-
-        shutdown_event.clear()
+        # Only control blocker threads; do not affect global app shutdown
+        app_blocker_shutdown_event.clear()
         t1 = threading.Thread(target=Utility.background_scanner, args=(blocked_apps, scan_interval), daemon=True)
         t2 = threading.Thread(target=Utility.wmi_event_watcher, args=(blocked_apps,), daemon=True)
 
@@ -235,7 +240,8 @@ class Utility:
         if not app_blocker_threads:
             return
         
-        shutdown_event.set()
+        # Signal only blocker threads to stop
+        app_blocker_shutdown_event.set()
 
         for thread in app_blocker_threads:
             if thread.is_alive():
@@ -406,6 +412,13 @@ class Utility:
                     return
                 time.sleep(1)  # Short backoff
 
+    def thread_monitor():
+        while True:
+            active_threads = threading.active_coun40t()
+            print("\n[THREAD MONITOR] Active threads:", active_threads)
+            for t in threading.enumerate():
+                print(f"  - Name: {t.name}, Daemon: {t.daemon}")
+            time.sleep(5)  # check every 5 seconds
 
     @staticmethod
     def run_adaptive_timer(base_interval: float, func: callable, *args, **kwargs):

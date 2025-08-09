@@ -15,11 +15,16 @@ RETRY_DELAY = 0.2     # Seconds between retries
 
 
 class Database:
-    _wal_set = False  # Class-level flag so WAL mode is enabled only once
+    """
+    Class handles databse CRUD logic and thread safety by WAL mode protection.
+    """
+    _wal_set = False 
     _tables_created = False
 
     def __init__(self):
-        """Initialize database connection settings."""
+        """
+        Initialize database connection settings.
+        """
         try:
             if not Database._wal_set:
                 self._set_wal_mode_once()
@@ -34,7 +39,9 @@ class Database:
             logger.exception(f"DB init failed: {e}")
 
     def _ensure_tables_exist(self):
-        """Ensure all required tables exist, creating them if necessary."""
+        """
+        Ensure all required tables exist, creating them if necessary.
+        """
         required_tables = {
             'GENERAL_USAGE': schema.CREATE_TABLE_USER_STATS,
             'APP_USAGE': schema.CREATE_TABLE_APPLICATION_USAGE,
@@ -68,7 +75,9 @@ class Database:
         raise sqlite3.OperationalError("Failed to verify tables after retries.")
     
     def _set_wal_mode_once(self):
-        """Set WAL mode with retry to avoid lock issues."""
+        """
+        Set WAL mode with retry to avoid lock issues.
+        """
         for attempt in range(MAX_RETRIES):
             try:
                 conn = sqlite3.connect(DB_PATH, timeout=TIMEOUT, check_same_thread=False)
@@ -86,7 +95,9 @@ class Database:
 
     @contextmanager
     def get_connection(self):
-        """Fresh connection per operation (thread-safe)."""
+        """
+        Fresh connection per operation (thread-safe).
+        """
         conn = sqlite3.connect(DB_PATH, timeout=TIMEOUT, check_same_thread=False)
         conn.execute("PRAGMA foreign_keys = ON;")
         try:
@@ -96,7 +107,9 @@ class Database:
             conn.close()
 
     def execute_with_retry(self, query, params=()):
-        """Run a write query with retry on lock."""
+        """
+        Run a write query with retry on lock.
+        """
         for attempt in range(MAX_RETRIES):
             try:
                 with self.get_connection() as (conn, cursor):
@@ -226,6 +239,16 @@ class Database:
                     raise
 
         raise sqlite3.OperationalError("DB still locked after retries.")
+        
+    def reset_data(self, date):
+        try:
+            with self.get_connection() as (conn , cursor):
+                cursor.execute("DELETE FROM GENERAL_USAGE WHERE date = ?",(date))
+                conn.commit()
+                cursor.execute("DELETE FROM APP_USAGE WHERE date = ?",(date))
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"Unable to reset data for {date}")
 
     # ---------- Helpers ----------
     def get_user_stat_id(self, date: str):
@@ -237,7 +260,7 @@ class Database:
             SELECT rnk, date, screen_time, break_time
             FROM (
                 SELECT 
-                    ROW_NUMBER() OVER (ORDER BY date) AS rnk,
+                    ROW_NUMBER() OVER (ORDER BY date desc) AS rnk,
                     date,
                     screen_time,
                     break_time
@@ -252,7 +275,7 @@ class Database:
             break_time = Utility.get_formatted_screen_time(data[3])
             history.append([id , date , screen_time , break_time]) 
         return history
-    
+
     def load_existing_general_usage(self, date):
         return self.fetch_one(
             "SELECT screen_time, break_time FROM GENERAL_USAGE WHERE date = ?",
@@ -283,12 +306,3 @@ class Database:
             "SELECT 1 FROM blocked_urls WHERE url = ? LIMIT 1",
             (url,)
         ) is not None
-
-    def close_connection(self):
-        """No persistent connection to close in this design."""
-        logger.debug("No persistent DB connection to close.")
-
-
-if __name__ == "__main__":
-    user_db = Database()
-    atexit.register(user_db.close_connection)

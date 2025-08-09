@@ -6,13 +6,14 @@ from utils.utilities import Utility
 from logs.app_logger import logger
 from utils import keywords
 import threading
-import os
-
 # -------------------------------
 # Shared State - Class Definition
 # -------------------------------
 
 class UserActivityState:
+    """
+    Class handles the state of the user and other in-memory variables to process.
+    """
     def __init__(self):
         self.idle_time = 0
         self.active_window = ""
@@ -27,8 +28,12 @@ class UserActivityState:
         self.screentime_per_app = {}
         self.blocked_apps = set()
         self.blocked_urls = set()
+        self.is_paused = False
 
     def update(self):
+        """
+        Calculates the screentime based on the idle time. runs every 2 seconds from the activity thread.
+        """
         with self.lock:
             now = datetime.now()
             today = now.date()
@@ -67,8 +72,10 @@ class UserActivityState:
         self.last_check = now
 
     def reset_daily_counters(self):
-        """Resets all daily counters at midnight."""
-        logger.info("⏳ New day detected — resetting daily counters")
+        """
+        Resets all daily counters at midnight.
+        """
+        logger.info("New day detected — resetting daily counters")
         self.screen_time = 0
         self.total_break_duration = 0
         self.total_stretch_time = 0

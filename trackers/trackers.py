@@ -6,6 +6,9 @@ from logs.app_logger import logger
 from utils.utilities import shutdown_event
 from utils import keywords
 from storage import db
+import psutil
+from datetime import datetime, timedelta
+
 import atexit
 
 # ------------------------
@@ -27,7 +30,12 @@ def activity_tracker(state: UserActivityState):
             if shutdown_event.is_set():
                 return
 
+            if state.is_paused:
+                logger.warning("Tracker Paused")
+                return
+            
             state.update()
+            logger.debug("ACTIVITY THREAD IS RUNNING.")
             with state.lock:
                 date = datetime.now().strftime("%Y-%m-%d")
                 app_data = state.screentime_per_app.copy()
@@ -49,8 +57,6 @@ def activity_tracker(state: UserActivityState):
 # ------------------------
 # Reminder Logic
 # ------------------------
-import psutil
-from datetime import datetime, timedelta
 
 def reminder_logic(state: UserActivityState):
     """
@@ -61,33 +67,20 @@ def reminder_logic(state: UserActivityState):
     - Merges consecutive breaks with short active periods
     """
     if not shutdown_event.is_set():
-        reminder_threshold = 45 * 60  # 45 minutes
-        idle_threshold = 20  # seconds of inactivity before counting as break
+        reminder_threshold = 2 * 60 # 45 minutes
+        idle_threshold = 60  # seconds of inactivity before counting as break
         break_merge_gap = 15  # seconds of allowed activity to still merge breaks
-
-        def is_system_sleeping():
-            """Detect if system is likely in sleep/lock mode."""
-            app_title = state.active_window.lower()
-            unknown_window = (app_title == "unknown" or app_title == "unknow")
-
-            # Optional: extra check using psutil (won’t work on all OS without permissions)
-            try:
-                battery = psutil.sensors_battery()
-                # If on battery and discharge is 0%, system is likely sleeping/hibernated
-                # or screen locked without activity
-                battery_sleep_hint = (battery and battery.power_plugged is None)
-            except Exception:
-                battery_sleep_hint = False
-
-            return unknown_window or battery_sleep_hint
 
         def main_logic(gap_seconds=0):
             try:
+                if state.is_paused:
+                    return
+                
                 nonlocal reminder_threshold, idle_threshold, break_merge_gap
 
                 with state.lock:
                     now = datetime.now()
-
+                    logger.debug("REMINDER THREAD IS RUNNING.")
                     # --- Handle long gaps (sleep/resume) directly ---
                     if gap_seconds > idle_threshold:
                         state.total_break_duration += gap_seconds
@@ -152,4 +145,4 @@ def reminder_logic(state: UserActivityState):
             except Exception:
                 logger.exception("Crash in reminder_logic:")
 
-        Utility.run_precise_timer(2, main_logic)
+        Utility.run_precise_timer(1, main_logic)

@@ -1,10 +1,11 @@
+from frontend_ui.base_layout import TimeTrackerApp
 from state.userstate import UserActivityState
 from datetime import datetime , timedelta
 from utils.utilities import Utility
-from frontend_ui import interface
-from frontend_ui import tst
 from logs.app_logger import logger
+from frontend_ui import interface
 from trackers import trackers
+from frontend_ui import tst
 from storage import db
 import threading
 import ctypes
@@ -12,36 +13,21 @@ import time
 import sys
 import os
 
-def thread_monitor():
-    while True:
-        active_threads = threading.active_coun40t()
-        print("\n[THREAD MONITOR] Active threads:", active_threads)
-        for t in threading.enumerate():
-            print(f"  - Name: {t.name}, Daemon: {t.daemon}")
-        time.sleep(5)  # check every 5 seconds
-
-# -------------------------
-# Main Launcher
-# ------------------------- 
  
 if __name__ == "__main__":
 
-    # Run as admin if not already
     if not Utility.is_admin():
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, " ".join(sys.argv), None, 1
         )
         logger.debug("Running as admin")
 
-    # Initialize the database and activity state
     user_db = db.Database()
     state = UserActivityState()
 
-    # Load previously stored data (if available)
     today = datetime.now().strftime("%Y-%m-%d")
     existing = user_db.load_existing_general_usage(date=today)
 
-    # Always load these first
     blocked_apps = user_db.load_blocked_apps()
     blocked_urls = user_db.load_blocked_urls()
     state.blocked_apps = blocked_apps
@@ -55,16 +41,17 @@ if __name__ == "__main__":
     else:
         logger.debug("No previous usage found. Starting fresh.")
 
-    # Always start blocker if apps are present
     if state.blocked_apps:
         Utility.start_app_blocker(state.blocked_apps, scan_interval=1)
 
-    # Start background threads for tracking and reminders
     tracker_thread = threading.Thread(target=trackers.activity_tracker, args=(state,), daemon=True)
     reminder_thread = threading.Thread(target=trackers.reminder_logic, args=(state,), daemon=True)
 
-    # Start the threads
     tracker_thread.start()
     reminder_thread.start()
   
-    interface.start_ui(shared_state=state)
+    app = TimeTrackerApp(state=state)
+    app.tracker_thread = tracker_thread
+    app.reminder_thread = reminder_thread
+    app.mainloop()
+    # interface.start_ui(shared_state=state)

@@ -77,6 +77,9 @@ def graceful_shutdown():
 
     os._exit(0)
 
+def get_threads():
+    from main import tracker_thread, reminder_thread
+    return tracker_thread, reminder_thread
 
 # ===============================
 # Tray Handling
@@ -489,7 +492,7 @@ def start_ui(shared_state):
                             data_list.add(exe_name)
                             refresh_callback()
                 else:
-                    # For URLs — open an input dialog
+                    # For URLs — open a centered input dialog with warning
                     def submit_url():
                         url = url_entry.get().strip()
                         if url and url not in data_list:
@@ -501,8 +504,13 @@ def start_ui(shared_state):
                     input_window = tk.Toplevel()
                     input_window.title("Add URL")
                     input_window.configure(bg="#2b2b2b")
-                    input_window.geometry("300x120")
+                    width, height = 360, 180
+                    input_window.geometry(f"{width}x{height}")
                     input_window.resizable(False, False)
+                    input_window.update_idletasks()
+                    x = (input_window.winfo_screenwidth() // 2) - (width // 2)
+                    y = (input_window.winfo_screenheight() // 2) - (height // 2)
+                    input_window.geometry(f"{width}x{height}+{x}+{y}")
 
                     label = tk.Label(input_window, text="Enter URL:", font=("Segoe UI", 12), bg="#2b2b2b", fg="white")
                     label.pack(pady=(15, 5))
@@ -510,6 +518,20 @@ def start_ui(shared_state):
                     url_entry = tk.Entry(input_window, font=("Segoe UI", 12), width=35)
                     url_entry.pack(pady=(0, 10))
                     url_entry.focus()
+
+                    warn = tk.Label(
+                        input_window,
+                        text=(
+                            "Warning: Blocking may require admin privileges. "
+                            "Enter a domain only (e.g., example.com)."
+                        ),
+                        font=("Segoe UI", 10),
+                        bg="#2b2b2b",
+                        fg="#b0b8c1",
+                        wraplength=320,
+                        justify="center",
+                    )
+                    warn.pack(pady=(0, 6))
 
                     submit_btn = tk.Button(input_window, text="Add", font=("Segoe UI", 10), command=submit_url)
                     submit_btn.pack()
@@ -570,6 +592,7 @@ def start_ui(shared_state):
                         Utility.restart_dns_service()
                         Utility.flush_dns()
                         user_db.remove_from_blocked_url(url=val)
+                        
                     data_list.remove(val)
                     refresh_callback()  # Only refresh this section
 
